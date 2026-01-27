@@ -26,7 +26,7 @@ export function OrderForm({
 }: OrderFormProps) {
   const [side, setSide] = useState<OrderSide>('long');
   const [size, setSize] = useState('');
-  const [leverage, setLeverage] = useState(TRADING_CONSTANTS.DEFAULT_LEVERAGE);
+  const [leverage, setLeverage] = useState<number>(TRADING_CONSTANTS.DEFAULT_LEVERAGE);
   const [selectedPercent, setSelectedPercent] = useState<number | null>(null);
   const [hasError, setHasError] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
