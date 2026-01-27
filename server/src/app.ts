@@ -16,9 +16,13 @@ export const app = express();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: config.nodeEnv === 'production' 
-    ? ['https://your-domain.netlify.app'] 
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://trading-sim-hl.netlify.app',
+    'https://tradeterm.app',
+    'https://www.tradeterm.app'
+  ],
   credentials: true,
 }));
 
