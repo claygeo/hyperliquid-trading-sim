@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #12121a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a4a;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3a #12121a;
+}
+
+/* Base styles */
+html {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+body {
+  @apply bg-bg-primary text-text-primary antialiased;
+}
+
+/* Remove number input arrows */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Focus styles */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  @apply ring-2 ring-accent-cyan ring-offset-2 ring-offset-bg-primary;
+}
+
+/* Selection */
+::selection {
+  @apply bg-accent-cyan/30 text-text-primary;
+}
+
+/* Transitions */
+.transition-colors {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Custom utilities */
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+
+  .box-glow {
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+  }
+
+  .box-glow-green {
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+  }
+
+  .box-glow-red {
+    box-shadow: 0 0 15px rgba(255, 51, 102, 0.3);
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent-cyan to-accent-purple bg-clip-text text-transparent;
+  }
+}
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Shake animation for errors */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Scale in animation */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Price animations */
+.price-up {
+  animation: priceFlashGreen 0.3s ease-out;
+}
+
+.price-down {
+  animation: priceFlashRed 0.3s ease-out;
+}
+
+@keyframes priceFlashGreen {
+  0% {
+    background-color: rgba(0, 255, 136, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes priceFlashRed {
+  0% {
+    background-color: rgba(255, 51, 102, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Trading chart container */
+.chart-container {
+  @apply w-full h-full;
+}
+
+.chart-container > div {
+  @apply w-full h-full;
+}
+
+/* Orderbook depth bar */
+.depth-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  opacity: 0.15;
+  transition: width 0.15s ease-out;
+}
+
+/* Toast notifications */
+.toast-enter {
+  animation: slideIn 0.3s ease-out;
+}
+
+.toast-exit {
+  animation: slideOut 0.3s ease-in forwards;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .trading-layout {
+    @apply flex-col;
+  }
+  
+  .orderbook-container {
+    @apply h-64;
+  }
+  
+  .chart-container {
+    @apply h-80;
+  }
+}
