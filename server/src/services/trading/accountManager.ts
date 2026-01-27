@@ -6,22 +6,6 @@ import { PnlCalculator } from './pnlCalculator.js';
 import type { Account } from '../../types/trading.js';
 import type { UserStats } from '../../types/user.js';
 
-interface UserStats {
-  totalPnl: number;
-  totalPnlPercent: number;
-  winRate: number;
-  maxDrawdown: number;
-  tradeCount: number;
-  winningTrades: number;
-  losingTrades: number;
-  bestTrade: number;
-  worstTrade: number;
-  averageTrade: number;
-  averageWin: number;
-  averageLoss: number;
-  profitFactor: number;
-}
-
 export class AccountManager {
   private pnlCalculator: PnlCalculator;
 
@@ -58,7 +42,7 @@ export class AccountManager {
 
     // Note: balance already has margin deducted when positions are opened
     // So availableMargin = balance (not balance - usedMargin, which would double-count)
-    // Equity = balance + usedMargin (locked in positions) + unrealizedPnl
+    // Equity = balance (locked in positions) + unrealizedPnl
     return {
       id: account.id,
       userId: account.user_id,
