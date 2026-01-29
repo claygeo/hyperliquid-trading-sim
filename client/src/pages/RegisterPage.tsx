@@ -16,7 +16,7 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-4">
+    <div className="min-h-[100dvh] bg-bg-primary flex items-center justify-center p-4">
       {/* Background effects */}
       <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-30 pointer-events-none" />
       <div className="fixed inset-0 bg-gradient-radial from-accent-purple/10 via-transparent to-transparent pointer-events-none" />

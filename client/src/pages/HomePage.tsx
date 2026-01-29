@@ -6,7 +6,7 @@ export function HomePage() {
   const { isAuthenticated } = useAuthStore();
 
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary overflow-hidden">
+    <div className="min-h-[100dvh] bg-bg-primary text-text-primary overflow-hidden">
       {/* Background effects */}
       <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-20 pointer-events-none" />
       <div className="fixed inset-0 bg-gradient-radial from-accent-cyan/10 via-transparent to-transparent pointer-events-none" />

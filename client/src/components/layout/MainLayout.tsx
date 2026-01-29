@@ -10,7 +10,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   return (
     <WebSocketProvider>
-      <div className="min-h-screen bg-bg-primary text-text-primary">
+      <div className="min-h-[100dvh] bg-bg-primary text-text-primary">
         {/* Background pattern */}
         <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-30 pointer-events-none" />
         
@@ -18,9 +18,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div className="fixed inset-0 bg-gradient-radial from-accent-cyan/5 via-transparent to-transparent pointer-events-none" />
 
         {/* Content */}
-        <div className="relative z-10">
+        <div className="relative z-10 safe-area-top">
           <Header />
-          <main className="h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
+          <main className="h-[calc(100dvh-64px)] pb-16 md:pb-0">
             {children}
           </main>
         </div>
