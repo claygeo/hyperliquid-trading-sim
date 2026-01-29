@@ -139,9 +139,9 @@ export function TradingPage() {
   const MobileTabs = () => (
     <div className="md:hidden flex bg-bg-secondary rounded-lg p-1 border border-border">
       {[
-        { id: 'chart', label: 'Chart', icon: '📊' },
-        { id: 'trade', label: 'Trade', icon: '💹' },
-        { id: 'positions', label: 'Positions', icon: '📋', badge: positions.length },
+        { id: 'chart', label: 'Chart' },
+        { id: 'trade', label: 'Trade' },
+        { id: 'positions', label: 'Positions', badge: positions.length },
       ].map((tab) => (
         <button
           key={tab.id}
@@ -153,7 +153,6 @@ export function TradingPage() {
               : 'text-text-secondary'
           )}
         >
-          <span>{tab.icon}</span>
           <span>{tab.label}</span>
           {tab.badge !== undefined && tab.badge > 0 && (
             <span className={cn(

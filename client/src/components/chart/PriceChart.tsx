@@ -161,25 +161,38 @@ export function PriceChart({
   return (
     <div className="relative h-full w-full bg-bg-secondary rounded-xl border border-border overflow-hidden">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-bg-secondary/90 backdrop-blur-sm border-b border-border">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold font-display">{selectedAsset}/USD</h2>
-          {displayPrice > 0 && (
-            <div className="flex items-center gap-2">
-              <span className={`text-xl font-mono font-bold ${priceColor}`}>
-                ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-          )}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-bg-secondary/90 backdrop-blur-sm border-b border-border">
+        {/* Price row */}
+        <div className="flex items-center justify-between px-4 py-2 md:py-3">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold font-display">{selectedAsset}/USD</h2>
+            {displayPrice > 0 && (
+              <div className="flex items-center gap-2">
+                <span className={`text-xl font-mono font-bold ${priceColor}`}>
+                  ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+          </div>
+          {/* Desktop: show timeframes inline */}
+          <div className="hidden md:block">
+            <ChartControls
+              selectedTimeframe={selectedTimeframe}
+              onTimeframeChange={onTimeframeChange}
+            />
+          </div>
         </div>
-        <ChartControls
-          selectedTimeframe={selectedTimeframe}
-          onTimeframeChange={onTimeframeChange}
-        />
+        {/* Mobile: timeframes on separate row */}
+        <div className="md:hidden px-4 pb-2 overflow-x-auto">
+          <ChartControls
+            selectedTimeframe={selectedTimeframe}
+            onTimeframeChange={onTimeframeChange}
+          />
+        </div>
       </div>
 
-      {/* Chart container */}
-      <div ref={containerRef} className="h-full w-full pt-14" />
+      {/* Chart container - adjusted padding for mobile */}
+      <div ref={containerRef} className="h-full w-full pt-[88px] md:pt-14" />
 
       {/* Loading overlay */}
       {isLoading && (

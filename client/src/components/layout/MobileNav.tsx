@@ -2,9 +2,9 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 
 const navItems = [
-  { path: '/trade', label: 'Trade', icon: '📈' },
-  { path: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
-  { path: '/profile', label: 'Profile', icon: '👤' },
+  { path: '/trade', label: 'Trade' },
+  { path: '/leaderboard', label: 'Leaderboard' },
+  { path: '/profile', label: 'Profile' },
 ];
 
 export function MobileNav() {
@@ -18,14 +18,13 @@ export function MobileNav() {
             key={item.path}
             to={item.path}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors',
+              'flex flex-col items-center justify-center flex-1 h-full transition-colors',
               location.pathname === item.path
                 ? 'text-accent-cyan'
                 : 'text-text-muted'
             )}
           >
-            <span className="text-xl">{item.icon}</span>
-            <span className="text-[10px] font-medium">{item.label}</span>
+            <span className="text-xs font-medium">{item.label}</span>
           </Link>
         ))}
       </div>
