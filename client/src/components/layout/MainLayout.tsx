@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { Header } from './Header';
+import { MobileNav } from './MobileNav';
 import { WebSocketProvider } from '../../context/WebSocketContext';
 
 interface MainLayoutProps {
@@ -19,10 +20,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Content */}
         <div className="relative z-10">
           <Header />
-          <main className="h-[calc(100vh-64px)]">
+          <main className="h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
             {children}
           </main>
         </div>
+
+        {/* Mobile bottom navigation */}
+        <MobileNav />
       </div>
     </WebSocketProvider>
   );

@@ -74,8 +74,8 @@ export function PositionPanel({ positions, onClosePosition, isLoading }: Positio
           </h3>
         </div>
 
-        {/* Column headers */}
-        <div className="grid grid-cols-8 gap-2 px-4 py-2 text-xs text-text-muted border-b border-border flex-shrink-0">
+        {/* Desktop column headers */}
+        <div className="hidden md:grid grid-cols-8 gap-2 px-4 py-2 text-xs text-text-muted border-b border-border flex-shrink-0">
           <span>Asset</span>
           <span>Side</span>
           <span className="text-right">Size</span>
@@ -89,7 +89,7 @@ export function PositionPanel({ positions, onClosePosition, isLoading }: Positio
         {/* Positions list */}
         <div className="flex-1 overflow-y-auto">
           {openPositions.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-text-muted text-sm">
+            <div className="flex items-center justify-center h-full text-text-muted text-sm py-8">
               No open positions
             </div>
           ) : (

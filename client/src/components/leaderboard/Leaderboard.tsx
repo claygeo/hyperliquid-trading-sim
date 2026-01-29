@@ -17,9 +17,9 @@ export function Leaderboard({ entries }: LeaderboardProps) {
   }
 
   return (
-    <div className="bg-bg-secondary rounded-xl border border-border">
-      {/* Column headers */}
-      <div className="grid grid-cols-7 gap-4 px-4 py-3 text-xs text-text-muted border-b border-border">
+    <div className="bg-bg-secondary rounded-xl border border-border overflow-hidden">
+      {/* Desktop column headers */}
+      <div className="hidden md:grid grid-cols-7 gap-4 px-4 py-3 text-xs text-text-muted border-b border-border">
         <span>Rank</span>
         <span>Trader</span>
         <span className="text-right">Total PnL</span>
@@ -27,6 +27,11 @@ export function Leaderboard({ entries }: LeaderboardProps) {
         <span className="text-right">Win Rate</span>
         <span className="text-right">Max Drawdown</span>
         <span className="text-right">Trades</span>
+      </div>
+
+      {/* Mobile header */}
+      <div className="md:hidden px-4 py-3 text-xs text-text-muted border-b border-border">
+        Top Traders
       </div>
 
       {/* Leaderboard entries */}
