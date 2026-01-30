@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { useAuthStore } from './hooks/useAuth';
 import { MainLayout } from './components/layout/MainLayout';
 import { AuthGuard } from './components/auth/AuthGuard';
-import { HomePage } from './pages/HomePage';
 import { TradingPage } from './pages/TradingPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -30,10 +29,17 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
+      {/* Trading page is the default - no landing page fluff */}
+      <Route
+        path="/"
+        element={
+          <MainLayout>
+            <TradingPage />
+          </MainLayout>
+        }
+      />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      {/* Trading page accessible without login - order form will prompt login */}
       <Route
         path="/trade"
         element={
