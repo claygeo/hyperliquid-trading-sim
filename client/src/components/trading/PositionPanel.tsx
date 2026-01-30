@@ -28,21 +28,18 @@ export function PositionPanel({ positions, onClosePosition, isLoading, compact =
     const asset = closingPosition.asset;
     const side = closingPosition.side;
     
-    // Optimistically mark as closing
     setClosingIds((prev) => new Set(prev).add(positionId));
     setClosingPosition(null);
     
     try {
       await onClosePosition(positionId);
       
-      // Success toast
       addToast({
         type: pnl >= 0 ? 'success' : 'error',
         title: `Closed ${side} ${asset}`,
         message: `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)} realized`,
       });
     } catch (error) {
-      // Remove from closing state on error
       setClosingIds((prev) => {
         const next = new Set(prev);
         next.delete(positionId);
@@ -65,18 +62,51 @@ export function PositionPanel({ positions, onClosePosition, isLoading, compact =
     );
   }
 
+  if (compact) {
+    // Ultra compact for mobile - no header, minimal spacing
+    return (
+      <>
+        <div className="bg-bg-primary h-full overflow-y-auto">
+          {openPositions.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-500 text-xs py-4">
+              No open positions
+            </div>
+          ) : (
+            openPositions.map((position) => (
+              <PositionRow
+                key={position.id}
+                position={position}
+                onClose={() => setClosingPosition(position)}
+                isClosing={closingIds.has(position.id)}
+                compact
+              />
+            ))
+          )}
+        </div>
+
+        <ClosePositionModal
+          isOpen={!!closingPosition}
+          onClose={() => setClosingPosition(null)}
+          onConfirm={handleClose}
+          position={closingPosition}
+          isClosing={closingIds.has(closingPosition?.id || '')}
+        />
+      </>
+    );
+  }
+
   return (
     <>
-      <div className={`bg-bg-primary rounded-xl border border-border h-full flex flex-col ${compact ? 'text-xs' : ''}`}>
+      <div className="bg-bg-primary rounded-xl border border-border h-full flex flex-col">
         {/* Header */}
-        <div className={`${compact ? 'px-2 py-2' : 'px-4 py-3'} border-b border-border flex items-center justify-between flex-shrink-0`}>
-          <h3 className={`${compact ? 'text-xs' : 'text-sm'} font-semibold text-text-primary`}>
+        <div className="px-4 py-2 border-b border-border flex items-center justify-between flex-shrink-0">
+          <h3 className="text-sm font-semibold text-white">
             Positions ({openPositions.length})
           </h3>
         </div>
 
         {/* Desktop column headers */}
-        <div className="hidden md:grid grid-cols-8 gap-2 px-4 py-2 text-xs text-text-muted border-b border-border flex-shrink-0">
+        <div className="hidden md:grid grid-cols-8 gap-2 px-4 py-2 text-xs text-gray-500 border-b border-border flex-shrink-0">
           <span>Asset</span>
           <span>Side</span>
           <span className="text-right">Size</span>
@@ -90,7 +120,7 @@ export function PositionPanel({ positions, onClosePosition, isLoading, compact =
         {/* Positions list */}
         <div className="flex-1 overflow-y-auto">
           {openPositions.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-text-muted text-sm py-8">
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm py-8">
               No open positions
             </div>
           ) : (
@@ -106,7 +136,6 @@ export function PositionPanel({ positions, onClosePosition, isLoading, compact =
         </div>
       </div>
 
-      {/* Close confirmation modal */}
       <ClosePositionModal
         isOpen={!!closingPosition}
         onClose={() => setClosingPosition(null)}

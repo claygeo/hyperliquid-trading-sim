@@ -2,19 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar - dark */
+/* Universal font */
+* {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Monospace for numbers */
+.font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Custom scrollbar - minimal */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0b0f;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #2b3139;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -24,16 +34,14 @@
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2b3139 #0b0b0f;
+  scrollbar-color: #2b3139 transparent;
 }
 
 /* Base styles */
-html {
-  font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif;
-}
-
-body {
+html, body {
   @apply bg-black text-text-primary antialiased;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Remove number input arrows */
@@ -84,6 +92,10 @@ input[type='number'] {
 
   .box-glow-red {
     box-shadow: 0 0 15px rgba(246, 70, 93, 0.2);
+  }
+  
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -196,18 +208,8 @@ input[type='number'] {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
-/* Prevent pull-to-refresh on mobile */
-html, body {
-  overscroll-behavior: none;
-}
-
 /* Mobile touch improvements */
 @media (hover: none) and (pointer: coarse) {
-  button, a, [role="button"] {
-    min-height: 44px;
-    min-width: 44px;
-  }
-  
   button:active, a:active, [role="button"]:active {
     opacity: 0.7;
   }
@@ -220,40 +222,77 @@ html, body {
   }
 }
 
-/* Range input styling */
-input[type="range"] {
+/* IMPROVED RANGE INPUT - Better touch support */
+input[type="range"],
+.touch-slider {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
   cursor: pointer;
+  width: 100%;
+  height: 32px; /* Larger touch area */
+  padding: 12px 0;
+  margin: 0;
+  touch-action: none; /* Prevent scroll while dragging */
 }
 
-input[type="range"]::-webkit-slider-track {
+input[type="range"]::-webkit-slider-runnable-track,
+.touch-slider::-webkit-slider-runnable-track {
   background: #1e2026;
-  height: 4px;
-  border-radius: 2px;
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb,
+.touch-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #00d4ff;
-  margin-top: -5px;
+  cursor: pointer;
+  margin-top: -9px;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  border: 2px solid #00d4ff;
 }
 
-input[type="range"]::-moz-range-track {
+input[type="range"]::-webkit-slider-thumb:active,
+.touch-slider::-webkit-slider-thumb:active {
+  transform: scale(1.1);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.8);
+}
+
+input[type="range"]::-moz-range-track,
+.touch-slider::-moz-range-track {
   background: #1e2026;
-  height: 4px;
-  border-radius: 2px;
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+input[type="range"]::-moz-range-thumb,
+.touch-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #00d4ff;
-  border: none;
+  cursor: pointer;
+  border: 2px solid #00d4ff;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb:active,
+.touch-slider::-moz-range-thumb:active {
+  transform: scale(1.1);
+}
+
+/* Hide TradingView watermark if it exists */
+.tv-lightweight-charts .tv-watermark,
+[class*="watermark"],
+[class*="Watermark"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
 }

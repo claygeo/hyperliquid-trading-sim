@@ -21,13 +21,16 @@ interface MarketDataState {
   isLoadingCandles: boolean;
   isLoadingOrderbook: boolean;
 
+  // Track current subscription
+  currentSubscribedAsset: string | null;
+
   // Actions
   setSelectedAsset: (asset: string) => void;
   setSelectedTimeframe: (timeframe: string) => void;
   fetchCandles: (asset: string, timeframe: string) => Promise<void>;
-  updateCandle: (candle: Candle) => void;
-  updateOrderbook: (data: { bids: [number, number][]; asks: [number, number][]; timestamp: number }) => void;
-  addTrade: (trade: Trade) => void;
+  updateCandle: (asset: string, candle: Candle) => void;
+  updateOrderbook: (asset: string, data: { bids: [number, number][]; asks: [number, number][]; timestamp: number }) => void;
+  addTrade: (asset: string, trade: Trade) => void;
   updatePrice: (price: number) => void;
   subscribeToAsset: (asset: string) => void;
   unsubscribeFromAsset: (asset: string) => void;
@@ -43,13 +46,26 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   currentPrice: 0,
   isLoadingCandles: false,
   isLoadingOrderbook: false,
+  currentSubscribedAsset: null,
 
   setSelectedAsset: (asset) => {
     const currentAsset = get().selectedAsset;
     if (currentAsset !== asset) {
-      get().unsubscribeFromAsset(currentAsset);
-      set({ selectedAsset: asset, orderbook: null, trades: [] });
+      // Unsubscribe from old asset
+      if (get().currentSubscribedAsset) {
+        get().unsubscribeFromAsset(get().currentSubscribedAsset);
+      }
+      // Clear orderbook and trades, reset price
+      set({ 
+        selectedAsset: asset, 
+        orderbook: null, 
+        trades: [], 
+        currentPrice: 0,
+        currentSubscribedAsset: null 
+      });
+      // Subscribe to new asset
       get().subscribeToAsset(asset);
+      // Fetch candles for new asset
       get().fetchCandles(asset, get().selectedTimeframe);
     }
   },
@@ -66,7 +82,8 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
       const candlesMap = new Map(get().candles);
       candlesMap.set(`${asset}-${timeframe}`, candles);
       
-      if (candles.length > 0) {
+      // Only update price if this is still the selected asset
+      if (get().selectedAsset === asset && candles.length > 0) {
         set({ 
           candles: candlesMap, 
           currentPrice: candles[candles.length - 1].close,
@@ -81,20 +98,21 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     }
   },
 
-  updateCandle: (candle) => {
+  updateCandle: (asset, candle) => {
     const { selectedAsset, selectedTimeframe, candles } = get();
-    const key = `${selectedAsset}-${selectedTimeframe}`;
+    // Only update if this is the selected asset
+    if (asset !== selectedAsset) return;
+    
+    const key = `${asset}-${selectedTimeframe}`;
     const currentCandles = candles.get(key) || [];
     
     const lastCandle = currentCandles[currentCandles.length - 1];
     if (lastCandle && lastCandle.time === candle.time) {
-      // Update existing candle
       const updatedCandles = [...currentCandles.slice(0, -1), candle];
       const newMap = new Map(candles);
       newMap.set(key, updatedCandles);
       set({ candles: newMap, currentPrice: candle.close });
     } else {
-      // New candle
       const updatedCandles = [...currentCandles, candle].slice(-UI_CONSTANTS.CHART_CANDLE_LIMIT);
       const newMap = new Map(candles);
       newMap.set(key, updatedCandles);
@@ -102,7 +120,10 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     }
   },
 
-  updateOrderbook: (data) => {
+  updateOrderbook: (asset, data) => {
+    // Only update if this is the selected asset
+    if (asset !== get().selectedAsset) return;
+    
     const bids: OrderbookLevel[] = data.bids
       .slice(0, UI_CONSTANTS.ORDERBOOK_LEVELS)
       .reduce((acc, [price, size], i) => {
@@ -138,7 +159,10 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     });
   },
 
-  addTrade: (trade) => {
+  addTrade: (asset, trade) => {
+    // Only update if this is the selected asset
+    if (asset !== get().selectedAsset) return;
+    
     set((state) => ({
       trades: [trade, ...state.trades].slice(0, UI_CONSTANTS.RECENT_TRADES_LIMIT),
       currentPrice: trade.price,
@@ -150,33 +174,42 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   },
 
   subscribeToAsset: (asset) => {
+    // Mark as subscribed
+    set({ currentSubscribedAsset: asset });
+    
     wsClient.subscribe(`candles:${asset}`);
     wsClient.subscribe(`orderbook:${asset}`);
     wsClient.subscribe(`trades:${asset}`);
 
-    wsClient.on('candle', (msg: WSMessage) => {
+    // Create handlers that check the asset
+    const handleCandle = (msg: WSMessage) => {
       if (msg.channel === `candles:${asset}` && msg.data) {
-        get().updateCandle(msg.data as Candle);
+        get().updateCandle(asset, msg.data as Candle);
       }
-    });
+    };
 
-    wsClient.on('orderbook', (msg: WSMessage) => {
+    const handleOrderbook = (msg: WSMessage) => {
       if (msg.channel === `orderbook:${asset}` && msg.data) {
-        get().updateOrderbook(msg.data as { bids: [number, number][]; asks: [number, number][]; timestamp: number });
+        get().updateOrderbook(asset, msg.data as { bids: [number, number][]; asks: [number, number][]; timestamp: number });
       }
-    });
+    };
 
-    wsClient.on('trade', (msg: WSMessage) => {
+    const handleTrade = (msg: WSMessage) => {
       if (msg.channel === `trades:${asset}` && msg.data) {
-        get().addTrade(msg.data as Trade);
+        get().addTrade(asset, msg.data as Trade);
       }
-    });
+    };
+
+    wsClient.on('candle', handleCandle);
+    wsClient.on('orderbook', handleOrderbook);
+    wsClient.on('trade', handleTrade);
   },
 
   unsubscribeFromAsset: (asset) => {
     wsClient.unsubscribe(`candles:${asset}`);
     wsClient.unsubscribe(`orderbook:${asset}`);
     wsClient.unsubscribe(`trades:${asset}`);
+    set({ currentSubscribedAsset: null });
   },
 }));
 

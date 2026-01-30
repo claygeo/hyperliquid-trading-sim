@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { PriceChart } from '../components/chart/PriceChart';
 import { Orderbook } from '../components/orderbook/Orderbook';
 import { RecentTrades } from '../components/trades/RecentTrades';
@@ -20,9 +20,10 @@ type MobileView = 'chart' | 'trade';
 
 export function TradingPage() {
   const [mobileView, setMobileView] = useState<MobileView>('chart');
+  const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const { addToast } = useToast();
   const { isAuthenticated } = useAuthStore();
-  const { assets, fetchAssets, getFilteredAssets, searchQuery, setSearchQuery } = useAssetsStore();
+  const { fetchAssets, getFilteredAssets, searchQuery, setSearchQuery } = useAssetsStore();
   const [showAssetSearch, setShowAssetSearch] = useState(false);
   
   const {
@@ -45,12 +46,10 @@ export function TradingPage() {
 
   const currentCandles = candles.get(`${selectedAsset}-${selectedTimeframe}`) || [];
 
-  // Fetch assets on mount
   useEffect(() => {
     fetchAssets();
   }, []);
 
-  // Calculate live PnL for positions
   const positionsWithLivePnl: Position[] = positions.map((position) => {
     if (position.asset !== selectedAsset || currentPrice <= 0) {
       return position;
@@ -99,6 +98,7 @@ export function TradingPage() {
     await placeOrder(order);
     fetchAccount();
     fetchPositions();
+    setLimitPriceFromOrderbook(null);
   };
 
   const handleClosePosition = async (positionId: string) => {
@@ -124,14 +124,17 @@ export function TradingPage() {
     setSearchQuery('');
   };
 
-  const filteredAssets = getFilteredAssets();
+  const handleOrderbookPriceClick = useCallback((price: number) => {
+    setLimitPriceFromOrderbook(price);
+  }, []);
 
-  // Asset search modal
+  const filteredAssets = getFilteredAssets();
+  const openPositions = positions.filter(p => p.status === 'open');
+
   const AssetSearchModal = () => (
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 bg-black/95">
       <div className="flex flex-col h-full">
-        {/* Search header */}
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-3 border-b border-border">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => { setShowAssetSearch(false); setSearchQuery(''); }}
@@ -146,21 +149,20 @@ export function TradingPage() {
               placeholder="Search markets..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-accent-cyan"
+              className="flex-1 bg-bg-tertiary border border-border rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-accent-cyan text-sm"
               autoFocus
             />
           </div>
         </div>
         
-        {/* Asset list */}
         <div className="flex-1 overflow-y-auto">
           {filteredAssets.map((asset) => (
             <button
               key={asset.symbol}
               onClick={() => handleAssetSelect(asset.symbol)}
               className={cn(
-                'w-full flex items-center justify-between px-4 py-3 border-b border-gray-800/50 transition-colors',
-                asset.symbol === selectedAsset ? 'bg-accent-cyan/10' : 'hover:bg-gray-900'
+                'w-full flex items-center justify-between px-4 py-3 border-b border-border/50 transition-colors',
+                asset.symbol === selectedAsset ? 'bg-accent-cyan/10' : 'active:bg-bg-tertiary'
               )}
             >
               <div className="flex items-center gap-3">
@@ -179,50 +181,40 @@ export function TradingPage() {
     </div>
   );
 
-  // Mobile Header with asset selector and view toggles
   const MobileHeader = () => (
-    <div className="md:hidden flex items-center justify-between px-3 py-2 bg-bg-primary border-b border-border">
-      {/* Asset selector */}
+    <div className="md:hidden flex items-center justify-between px-2 py-1.5 bg-black border-b border-border">
       <button 
         onClick={() => setShowAssetSearch(true)}
-        className="flex items-center gap-2"
+        className="flex items-center gap-1.5"
       >
-        <span className="text-white font-semibold">{selectedAsset}</span>
-        <span className="text-gray-500 text-sm">PERP</span>
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <span className="text-white font-semibold text-sm">{selectedAsset}</span>
+        <span className="text-gray-500 text-xs">PERP</span>
+        <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
-      {/* View toggles - Binance style icons */}
-      <div className="flex items-center gap-1 bg-bg-secondary rounded-lg p-1">
+      <div className="flex items-center gap-0.5 bg-bg-secondary rounded-md p-0.5">
         <button
           onClick={() => setMobileView('chart')}
           className={cn(
-            'p-2 rounded-md transition-colors',
+            'px-3 py-1.5 rounded text-xs font-medium transition-colors',
             mobileView === 'chart' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
           )}
-          title="Chart View"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4v16" />
-          </svg>
+          Chart
         </button>
         <button
           onClick={() => setMobileView('trade')}
           className={cn(
-            'p-2 rounded-md transition-colors',
+            'px-3 py-1.5 rounded text-xs font-medium transition-colors',
             mobileView === 'trade' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
           )}
-          title="Trade View"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
+          Trade
         </button>
       </div>
 
-      {/* Connection status */}
       <div className={cn(
         'w-2 h-2 rounded-full',
         isConnected ? 'bg-accent-green' : 'bg-accent-red'
@@ -230,7 +222,6 @@ export function TradingPage() {
     </div>
   );
 
-  // Desktop asset selector
   const DesktopAssetSelector = () => (
     <div className="flex items-center gap-2 bg-bg-secondary rounded-lg p-2 border border-border overflow-x-auto">
       <button
@@ -243,7 +234,6 @@ export function TradingPage() {
         </svg>
       </button>
 
-      {/* Quick asset buttons */}
       {['BTC', 'ETH', 'SOL', 'DOGE', 'PEPE'].filter(s => s !== selectedAsset).slice(0, 4).map((symbol) => (
         <button
           key={symbol}
@@ -266,11 +256,10 @@ export function TradingPage() {
 
   return (
     <div className="h-full overflow-hidden flex flex-col bg-black">
-      {/* Asset search modal */}
       {showAssetSearch && <AssetSearchModal />}
 
       {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col h-full">
+      <div className="md:hidden flex flex-col h-[100dvh]">
         <MobileHeader />
         
         <div className="flex-1 min-h-0 overflow-hidden">
@@ -286,9 +275,8 @@ export function TradingPage() {
                   currentPrice={currentPrice}
                 />
               </div>
-              {/* Positions below chart on mobile */}
-              {isAuthenticated && positions.length > 0 && (
-                <div className="flex-shrink-0 max-h-32 overflow-y-auto border-t border-border">
+              {isAuthenticated && openPositions.length > 0 && (
+                <div className="flex-shrink-0 border-t border-border bg-bg-secondary max-h-28 overflow-y-auto">
                   <PositionPanel
                     positions={positionsWithLivePnl}
                     onClosePosition={handleClosePosition}
@@ -299,13 +287,16 @@ export function TradingPage() {
             </div>
           ) : (
             <div className="h-full flex">
-              {/* Orderbook - left side */}
-              <div className="w-1/2 border-r border-border overflow-hidden">
-                <Orderbook orderbook={orderbook} asset={selectedAsset} compact />
+              <div className="w-[45%] border-r border-border overflow-hidden">
+                <Orderbook 
+                  orderbook={orderbook} 
+                  asset={selectedAsset} 
+                  compact 
+                  onPriceClick={handleOrderbookPriceClick}
+                />
               </div>
               
-              {/* Order form - right side */}
-              <div className="w-1/2 p-2 overflow-y-auto">
+              <div className="w-[55%] overflow-hidden">
                 <OrderForm
                   selectedAsset={selectedAsset}
                   currentPrice={currentPrice}
@@ -313,6 +304,7 @@ export function TradingPage() {
                   onPlaceOrder={handlePlaceOrder}
                   isPlacingOrder={isPlacingOrder}
                   compact
+                  externalLimitPrice={limitPriceFromOrderbook}
                 />
               </div>
             </div>
@@ -322,17 +314,19 @@ export function TradingPage() {
 
       {/* Desktop Layout */}
       <div className="hidden md:flex h-full p-2 gap-2">
-        {/* Left column - Orderbook & Recent Trades */}
         <div className="w-64 flex-shrink-0 flex flex-col gap-2">
           <div className="flex-1 min-h-0 overflow-hidden">
-            <Orderbook orderbook={orderbook} asset={selectedAsset} />
+            <Orderbook 
+              orderbook={orderbook} 
+              asset={selectedAsset}
+              onPriceClick={handleOrderbookPriceClick}
+            />
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
             <RecentTrades trades={trades} asset={selectedAsset} />
           </div>
         </div>
 
-        {/* Center - Chart & Positions */}
         <div className="flex-1 flex flex-col gap-2 min-w-0">
           <DesktopAssetSelector />
           
@@ -357,7 +351,6 @@ export function TradingPage() {
           )}
         </div>
 
-        {/* Right column - Order Form & Stats */}
         <div className="w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
           {isAuthenticated && (
             <AccountStats
@@ -374,6 +367,7 @@ export function TradingPage() {
             availableBalance={account?.availableMargin || 100000}
             onPlaceOrder={handlePlaceOrder}
             isPlacingOrder={isPlacingOrder}
+            externalLimitPrice={limitPriceFromOrderbook}
           />
 
           {isAuthenticated && <OpenOrders />}

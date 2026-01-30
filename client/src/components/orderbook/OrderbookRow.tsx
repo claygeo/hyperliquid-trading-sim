@@ -1,4 +1,4 @@
-import { formatPrice, formatSize } from '../../lib/utils';
+import { cn } from '../../lib/utils';
 
 interface OrderbookRowProps {
   price: number;
@@ -6,35 +6,66 @@ interface OrderbookRowProps {
   total: number;
   maxTotal: number;
   side: 'bid' | 'ask';
+  compact?: boolean;
+  onClick?: (price: number) => void;
 }
 
-export function OrderbookRow({ price, size, total, maxTotal, side }: OrderbookRowProps) {
+// Format price with appropriate decimals
+function formatPrice(price: number): string {
+  if (price >= 10000) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (price >= 1000) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (price >= 100) return price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  if (price >= 1) return price.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return price.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+}
+
+// Format size compactly
+function formatSize(size: number): string {
+  if (size >= 1000000) return (size / 1000000).toFixed(2) + 'M';
+  if (size >= 1000) return (size / 1000).toFixed(2) + 'K';
+  if (size >= 1) return size.toFixed(4);
+  return size.toFixed(6);
+}
+
+export function OrderbookRow({ price, size, total, maxTotal, side, compact = false, onClick }: OrderbookRowProps) {
   const percentage = (total / maxTotal) * 100;
   const isBid = side === 'bid';
 
+  const handleClick = () => {
+    if (onClick) {
+      onClick(price);
+    }
+  };
+
   return (
-    <div className="relative grid grid-cols-3 gap-2 px-4 py-1 text-xs font-mono hover:bg-bg-tertiary transition-colors">
+    <div 
+      className={cn(
+        'relative grid grid-cols-2 gap-1 font-mono transition-colors cursor-pointer',
+        compact ? 'px-2 py-[3px] text-[11px]' : 'px-3 py-1 text-xs',
+        onClick && 'hover:bg-bg-tertiary active:bg-bg-elevated'
+      )}
+      onClick={handleClick}
+    >
       {/* Depth bar */}
       <div
-        className={`absolute inset-y-0 ${isBid ? 'right-0' : 'right-0'} ${
-          isBid ? 'bg-accent-green/10' : 'bg-accent-red/10'
-        }`}
-        style={{ width: `${percentage}%` }}
+        className={cn(
+          'absolute inset-y-0 right-0 transition-all duration-150',
+          isBid ? 'bg-accent-green/15' : 'bg-accent-red/15'
+        )}
+        style={{ width: `${Math.min(percentage, 100)}%` }}
       />
 
       {/* Price */}
-      <span className={`relative z-10 ${isBid ? 'text-accent-green' : 'text-accent-red'}`}>
+      <span className={cn(
+        'relative z-10 tabular-nums',
+        isBid ? 'text-accent-green' : 'text-accent-red'
+      )}>
         {formatPrice(price)}
       </span>
 
       {/* Size */}
-      <span className="relative z-10 text-right text-text-primary">
+      <span className="relative z-10 text-right text-gray-300 tabular-nums">
         {formatSize(size)}
-      </span>
-
-      {/* Total */}
-      <span className="relative z-10 text-right text-text-secondary">
-        {formatSize(total)}
       </span>
     </div>
   );

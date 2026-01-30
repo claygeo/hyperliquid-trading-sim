@@ -9,9 +9,10 @@ interface OrderbookProps {
   asset: string;
   isLoading?: boolean;
   compact?: boolean;
+  onPriceClick?: (price: number) => void;
 }
 
-export function Orderbook({ orderbook, asset, isLoading, compact = false }: OrderbookProps) {
+export function Orderbook({ orderbook, asset, isLoading, compact = false, onPriceClick }: OrderbookProps) {
   if (isLoading || !orderbook) {
     return (
       <div className="h-full bg-bg-primary rounded-xl border border-border p-4 flex items-center justify-center">
@@ -22,22 +23,27 @@ export function Orderbook({ orderbook, asset, isLoading, compact = false }: Orde
 
   const maxTotal = getMaxTotal(orderbook.bids, orderbook.asks);
 
+  // For mobile compact view, show fewer levels
+  const displayLevels = compact ? 8 : 10;
+  const asks = orderbook.asks.slice(0, displayLevels);
+  const bids = orderbook.bids.slice(0, displayLevels);
+
   return (
-    <div className="h-full bg-bg-primary rounded-xl border border-border flex flex-col">
+    <div className="h-full bg-bg-primary flex flex-col overflow-hidden">
       {/* Header */}
-      <div className={compact ? "px-2 py-2 border-b border-border" : "px-4 py-3 border-b border-border"}>
-        <h3 className={compact ? "text-xs font-semibold text-text-primary" : "text-sm font-semibold text-text-primary"}>Order Book</h3>
+      <div className={compact ? "px-2 py-1.5 border-b border-border flex-shrink-0" : "px-4 py-2 border-b border-border flex-shrink-0"}>
+        <h3 className={compact ? "text-[10px] font-semibold text-gray-400 uppercase tracking-wide" : "text-xs font-semibold text-gray-400"}>Order Book</h3>
       </div>
 
       {/* Column headers */}
-      <div className={`grid grid-cols-2 gap-1 ${compact ? 'px-2 py-1' : 'px-4 py-2'} text-xs text-text-muted border-b border-border`}>
+      <div className={`grid grid-cols-2 gap-1 ${compact ? 'px-2 py-1' : 'px-3 py-1.5'} text-[10px] text-gray-500 border-b border-border flex-shrink-0`}>
         <span>Price</span>
         <span className="text-right">Size</span>
       </div>
 
       {/* Asks (sells) - reversed so lowest ask is at bottom */}
-      <div className="flex-1 overflow-hidden flex flex-col-reverse">
-        {orderbook.asks.slice().reverse().map((level, index) => (
+      <div className="flex-1 overflow-hidden flex flex-col-reverse min-h-0">
+        {asks.slice().reverse().map((level, index) => (
           <OrderbookRow
             key={`ask-${index}`}
             price={level.price}
@@ -45,6 +51,8 @@ export function Orderbook({ orderbook, asset, isLoading, compact = false }: Orde
             total={level.total}
             maxTotal={maxTotal}
             side="ask"
+            compact={compact}
+            onClick={onPriceClick}
           />
         ))}
       </div>
@@ -54,11 +62,12 @@ export function Orderbook({ orderbook, asset, isLoading, compact = false }: Orde
         spread={orderbook.spread}
         spreadPercent={orderbook.spreadPercent}
         midPrice={orderbook.midPrice}
+        compact={compact}
       />
 
       {/* Bids (buys) */}
-      <div className="flex-1 overflow-hidden">
-        {orderbook.bids.map((level, index) => (
+      <div className="flex-1 overflow-hidden min-h-0">
+        {bids.map((level, index) => (
           <OrderbookRow
             key={`bid-${index}`}
             price={level.price}
@@ -66,6 +75,8 @@ export function Orderbook({ orderbook, asset, isLoading, compact = false }: Orde
             total={level.total}
             maxTotal={maxTotal}
             side="bid"
+            compact={compact}
+            onClick={onPriceClick}
           />
         ))}
       </div>
