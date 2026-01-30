@@ -12,7 +12,6 @@ interface CandleTooltipProps {
 export function CandleTooltip({ candle, position, containerWidth, isMobile = false }: CandleTooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   
-  // Animate in on mount
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 10);
     return () => clearTimeout(timer);
@@ -24,7 +23,6 @@ export function CandleTooltip({ candle, position, containerWidth, isMobile = fal
   const range = candle.high - candle.low;
   const rangePercent = candle.low !== 0 ? (range / candle.low) * 100 : 0;
 
-  // Format timestamp with date if needed
   const formatTimestamp = (timestamp: number): string => {
     const date = new Date(timestamp);
     const today = new Date();
@@ -48,9 +46,6 @@ export function CandleTooltip({ candle, position, containerWidth, isMobile = fal
     return `${dateStr} ${timeStr}`;
   };
 
-  // Calculate tooltip position
-  // On mobile: center at top
-  // On desktop: follow cursor but stay within bounds
   const tooltipWidth = 180;
   const tooltipOffset = 15;
   
@@ -58,17 +53,14 @@ export function CandleTooltip({ candle, position, containerWidth, isMobile = fal
   let top: number;
   
   if (isMobile) {
-    // Center horizontally on mobile, fixed at top
     left = (containerWidth - tooltipWidth) / 2;
     top = 70;
   } else {
-    // Desktop: position near cursor
-    // Determine if tooltip should appear left or right of cursor
     const shouldFlipX = position.x + tooltipWidth + tooltipOffset > containerWidth;
     left = shouldFlipX 
       ? Math.max(10, position.x - tooltipWidth - tooltipOffset)
       : Math.min(position.x + tooltipOffset, containerWidth - tooltipWidth - 10);
-    top = 70; // Fixed below header
+    top = 70;
   }
 
   return (

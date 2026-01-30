@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, type IChartApi, type ISeriesApi, type CandlestickData, type Time } from 'lightweight-charts';
 import { ChartControls } from './ChartControls';
 import { CandleTooltip } from './CandleTooltip';
-import { chartConfig, mobileChartConfig, candlestickConfig, getTimeFormatter, getMinBarSpacing } from './chartConfig';
+import { chartConfig, mobileChartConfig, candlestickConfig, getMinBarSpacing } from './chartConfig';
 import type { Candle } from '../../types/market';
 import { Spinner } from '../ui/Spinner';
 
@@ -17,11 +17,13 @@ interface PriceChartProps {
   showAssetSelector?: boolean;
 }
 
-// Detect if device is mobile/touch
 const isTouchDevice = () => {
   if (typeof window === 'undefined') return false;
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 };
+
+// Double tap detection threshold in ms
+const DOUBLE_TAP_DELAY = 300;
 
 export function PriceChart({
   candles,
@@ -37,43 +39,60 @@ export function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   
-  // Store candles in a map for fast volume lookup during hover
   const candleMapRef = useRef<Map<number, Candle>>(new Map());
   
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [containerWidth, setContainerWidth] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [showHelperText, setShowHelperText] = useState(true);
   
-  // Track previous asset/timeframe to know when to fit content
   const prevAssetRef = useRef<string>(selectedAsset);
   const prevTimeframeRef = useRef<string>(selectedTimeframe);
   const initialLoadRef = useRef<boolean>(true);
   
-  // Track touch state for better mobile UX
-  const touchStateRef = useRef<{ isActive: boolean; startTime: number }>({
+  // Touch state for gestures
+  const touchStateRef = useRef<{
+    isActive: boolean;
+    lastTapTime: number;
+    tapCount: number;
+  }>({
     isActive: false,
-    startTime: 0,
+    lastTapTime: 0,
+    tapCount: 0,
   });
 
-  // Memoize sorted candles
   const sortedCandles = useMemo(() => {
     return [...candles].sort((a, b) => a.time - b.time);
   }, [candles]);
 
-  // Update candle map when candles change
   useEffect(() => {
     const map = new Map<number, Candle>();
     sortedCandles.forEach(c => {
-      // Store by time in seconds (as used by lightweight-charts)
       map.set(Math.floor(c.time / 1000), c);
     });
     candleMapRef.current = map;
   }, [sortedCandles]);
 
-  // Detect mobile on mount
   useEffect(() => {
     setIsMobile(isTouchDevice());
+  }, []);
+
+  // Auto-hide helper text after 4 seconds on mobile
+  useEffect(() => {
+    if (isMobile && showHelperText) {
+      const timer = setTimeout(() => {
+        setShowHelperText(false);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, showHelperText]);
+
+  // Reset chart zoom
+  const resetChartZoom = useCallback(() => {
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
   }, []);
 
   // Initialize chart
@@ -94,15 +113,14 @@ export function PriceChart({
     seriesRef.current = series;
     setContainerWidth(containerRef.current.clientWidth);
 
-    // Apply initial time formatter
+    // Apply timeframe-specific settings
     chart.applyOptions({
       timeScale: {
-        tickMarkFormatter: getTimeFormatter(selectedTimeframe),
         minBarSpacing: getMinBarSpacing(selectedTimeframe),
       },
     });
 
-    // Handle resize with debounce
+    // Resize handler with debounce
     let resizeTimeout: ReturnType<typeof setTimeout>;
     const handleResize = () => {
       clearTimeout(resizeTimeout);
@@ -119,14 +137,13 @@ export function PriceChart({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(containerRef.current);
 
-    // Handle crosshair move for tooltip
+    // Crosshair move for tooltip
     chart.subscribeCrosshairMove((param) => {
       if (!param.point || !param.time || !seriesRef.current) {
         setHoveredCandle(null);
         return;
       }
 
-      // Don't show tooltip during active touch/drag
       if (touchStateRef.current.isActive) {
         setHoveredCandle(null);
         return;
@@ -136,11 +153,10 @@ export function PriceChart({
       const data = param.seriesData.get(seriesRef.current) as CandlestickData;
       
       if (data) {
-        // Look up the full candle data including volume
         const fullCandle = candleMapRef.current.get(timeKey);
         
         setHoveredCandle({
-          time: timeKey * 1000, // Convert back to ms for display
+          time: timeKey * 1000,
           open: data.open,
           high: data.high,
           low: data.low,
@@ -151,29 +167,51 @@ export function PriceChart({
       }
     });
 
-    // Touch event handlers for mobile optimization
+    // Touch event handlers
     const chartElement = containerRef.current;
     
-    const handleTouchStart = () => {
-      touchStateRef.current = { isActive: true, startTime: Date.now() };
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStateRef.current.isActive = true;
       setHoveredCandle(null);
+      
+      // Only track single touch for double-tap
+      if (e.touches.length === 1) {
+        const now = Date.now();
+        const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
+        
+        if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
+          touchStateRef.current.tapCount++;
+        } else {
+          touchStateRef.current.tapCount = 1;
+        }
+        
+        touchStateRef.current.lastTapTime = now;
+      }
     };
     
-    const handleTouchEnd = () => {
-      const touchDuration = Date.now() - touchStateRef.current.startTime;
-      touchStateRef.current.isActive = false;
-      
-      // If it was a quick tap (< 200ms), let the crosshair show
-      if (touchDuration >= 200) {
-        setHoveredCandle(null);
+    const handleTouchEnd = (e: TouchEvent) => {
+      // Check for double tap on touch end
+      if (e.touches.length === 0) {
+        const now = Date.now();
+        const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
+        
+        // If this was a quick tap and we have 2 taps, it's a double tap
+        if (touchStateRef.current.tapCount >= 2 && timeSinceLastTap < DOUBLE_TAP_DELAY) {
+          resetChartZoom();
+          touchStateRef.current.tapCount = 0;
+        }
+        
+        // Small delay before allowing tooltip again
+        setTimeout(() => {
+          touchStateRef.current.isActive = false;
+        }, 100);
       }
     };
     
     const handleTouchMove = () => {
-      // During drag/pinch, hide tooltip
-      if (touchStateRef.current.isActive) {
-        setHoveredCandle(null);
-      }
+      // Reset tap count on move (it's a drag, not a tap)
+      touchStateRef.current.tapCount = 0;
+      setHoveredCandle(null);
     };
 
     chartElement.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -188,14 +226,13 @@ export function PriceChart({
       chartElement.removeEventListener('touchmove', handleTouchMove);
       chart.remove();
     };
-  }, [isMobile]); // Recreate chart if mobile state changes
+  }, [isMobile, resetChartZoom]);
 
-  // Update time formatter when timeframe changes
+  // Update minBarSpacing when timeframe changes
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current.applyOptions({
         timeScale: {
-          tickMarkFormatter: getTimeFormatter(selectedTimeframe),
           minBarSpacing: getMinBarSpacing(selectedTimeframe),
         },
       });
@@ -207,7 +244,7 @@ export function PriceChart({
     if (!seriesRef.current || sortedCandles.length === 0) return;
 
     const chartData: CandlestickData[] = sortedCandles.map((c) => ({
-      time: Math.floor(c.time / 1000) as Time, // Convert to seconds for lightweight-charts
+      time: Math.floor(c.time / 1000) as Time,
       open: c.open,
       high: c.high,
       low: c.low,
@@ -216,13 +253,11 @@ export function PriceChart({
 
     seriesRef.current.setData(chartData);
 
-    // Only fit content on initial load or when asset/timeframe changes
     const assetChanged = prevAssetRef.current !== selectedAsset;
     const timeframeChanged = prevTimeframeRef.current !== selectedTimeframe;
     const isInitialLoad = initialLoadRef.current;
     
     if (isInitialLoad || assetChanged || timeframeChanged) {
-      // Small delay to ensure data is rendered before fitting
       requestAnimationFrame(() => {
         chartRef.current?.timeScale().fitContent();
       });
@@ -238,8 +273,6 @@ export function PriceChart({
 
     const lastCandle = sortedCandles[sortedCandles.length - 1];
     
-    // Only update if current price is within 20% of the candle's close
-    // This prevents wild jumps when candle data is stale
     const priceDiff = Math.abs(currentPrice - lastCandle.close) / lastCandle.close;
     if (priceDiff > 0.2) {
       return;
@@ -258,7 +291,6 @@ export function PriceChart({
     updateLivePrice();
   }, [updateLivePrice]);
 
-  // Display price - prefer currentPrice, fallback to last candle
   const displayPrice = currentPrice && currentPrice > 0 
     ? currentPrice 
     : (sortedCandles.length > 0 ? sortedCandles[sortedCandles.length - 1]?.close : 0);
@@ -267,10 +299,10 @@ export function PriceChart({
     ? (displayPrice >= sortedCandles[sortedCandles.length - 1]?.open ? 'text-accent-green' : 'text-accent-red')
     : 'text-text-primary';
 
-  // Handle double-click to reset zoom
+  // Desktop double-click handler
   const handleDoubleClick = useCallback(() => {
-    chartRef.current?.timeScale().fitContent();
-  }, []);
+    resetChartZoom();
+  }, [resetChartZoom]);
 
   return (
     <div 
@@ -279,7 +311,6 @@ export function PriceChart({
     >
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-10 bg-bg-secondary/90 backdrop-blur-sm border-b border-border">
-        {/* Price row */}
         <div className="flex items-center justify-between px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <h2 className="text-base md:text-lg font-semibold font-display truncate">
@@ -298,7 +329,6 @@ export function PriceChart({
               </div>
             )}
           </div>
-          {/* Desktop: show controls inline */}
           <div className="hidden md:block">
             <ChartControls
               selectedTimeframe={selectedTimeframe}
@@ -310,7 +340,6 @@ export function PriceChart({
             />
           </div>
         </div>
-        {/* Mobile: controls on separate row */}
         <div className="md:hidden px-3 pb-2">
           <div className="flex items-center justify-between gap-2">
             <ChartControls
@@ -328,7 +357,8 @@ export function PriceChart({
       {/* Chart container */}
       <div 
         ref={containerRef} 
-        className="h-full w-full pt-[80px] md:pt-14 touch-pan-x touch-pinch-zoom"
+        className="h-full w-full pt-[80px] md:pt-14 touch-manipulation"
+        style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
       />
 
       {/* Loading overlay */}
@@ -351,9 +381,9 @@ export function PriceChart({
         />
       )}
 
-      {/* Mobile helper text */}
-      {isMobile && !hoveredCandle && sortedCandles.length > 0 && !isLoading && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/60 pointer-events-none">
+      {/* Mobile helper text - auto hides after 4 seconds */}
+      {isMobile && showHelperText && sortedCandles.length > 0 && !isLoading && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-bg-secondary/80 px-3 py-1 rounded-full backdrop-blur-sm transition-opacity duration-500">
           Pinch to zoom • Double-tap to reset
         </div>
       )}

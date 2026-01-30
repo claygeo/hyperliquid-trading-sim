@@ -22,7 +22,6 @@ export function ChartControls({
   const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -33,7 +32,6 @@ export function ChartControls({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle keyboard navigation for timeframes
   const handleKeyDown = (e: React.KeyboardEvent, currentIndex: number) => {
     const timeframeValues = TIMEFRAMES.map(tf => tf.value);
     
@@ -82,7 +80,6 @@ export function ChartControls({
             </svg>
           </button>
 
-          {/* Dropdown */}
           {isAssetDropdownOpen && (
             <div className="absolute top-full left-0 mt-1 w-36 bg-bg-elevated border border-border rounded-lg shadow-xl z-50 overflow-hidden">
               {ASSET_LIST.map((asset) => (
@@ -133,7 +130,6 @@ export function ChartControls({
               aria-label={`${tf.label} timeframe`}
             >
               {tf.label}
-              {/* Loading indicator for selected timeframe */}
               {isSelected && isLoading && (
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-cyan opacity-75" />

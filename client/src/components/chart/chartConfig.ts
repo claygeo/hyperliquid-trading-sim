@@ -1,59 +1,22 @@
-import { type ChartOptions, type DeepPartial, ColorType, type Time } from 'lightweight-charts';
+import { type ChartOptions, type DeepPartial, ColorType } from 'lightweight-charts';
 
-// Time formatting based on timeframe
-export function getTimeFormatter(timeframe: string) {
-  return (time: Time) => {
-    const date = new Date((time as number) * 1000);
-    
-    switch (timeframe) {
-      case '1m':
-      case '5m':
-        // Show hours:minutes for short timeframes
-        return date.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false 
-        });
-      case '15m':
-      case '1h':
-        // Show hours:minutes with date context
-        return date.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false 
-        });
-      case '4h':
-        // Show month/day hour:minute
-        return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:00`;
-      case '1d':
-        // Show month/day
-        return `${date.getMonth() + 1}/${date.getDate()}`;
-      default:
-        return date.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-    }
-  };
-}
-
-// Get minimum bar spacing based on timeframe
+// Get minimum bar spacing based on timeframe - lower values allow more zoom out
 export function getMinBarSpacing(timeframe: string): number {
   switch (timeframe) {
     case '1m':
-      return 2;
+      return 1;
     case '5m':
-      return 3;
+      return 1;
     case '15m':
-      return 4;
+      return 1;
     case '1h':
-      return 5;
+      return 2;
     case '4h':
-      return 6;
+      return 2;
     case '1d':
-      return 8;
+      return 3;
     default:
-      return 4;
+      return 1;
   }
 }
 
@@ -70,11 +33,11 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     horzLines: { color: 'rgba(42, 42, 58, 0.5)' },
   },
   crosshair: {
-    mode: 1, // Normal mode - shows crosshair
+    mode: 1,
     vertLine: {
       color: '#00d4ff',
       width: 1,
-      style: 2, // Dashed
+      style: 2,
       labelBackgroundColor: '#00d4ff',
       labelVisible: true,
     },
@@ -101,7 +64,7 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     secondsVisible: false,
     rightOffset: 5,
     barSpacing: 8,
-    minBarSpacing: 4,
+    minBarSpacing: 1, // Allow zooming out further
     fixLeftEdge: false,
     fixRightEdge: false,
     lockVisibleTimeRangeOnResize: true,
@@ -109,14 +72,12 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     borderVisible: true,
     visible: true,
     ticksVisible: true,
-    uniformDistribution: false,
-    shiftVisibleRangeOnNewBar: true,
   },
   handleScroll: {
     mouseWheel: true,
     pressedMouseMove: true,
     horzTouchDrag: true,
-    vertTouchDrag: false, // Disable vertical drag to prevent conflicts
+    vertTouchDrag: false,
   },
   handleScale: {
     axisPressedMouseMove: {
@@ -134,9 +95,6 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     touch: true,
     mouse: true,
   },
-  trackingMode: {
-    exitMode: 1, // Exit on touch end
-  },
 };
 
 // Mobile-specific overrides
@@ -149,7 +107,7 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
   timeScale: {
     ...chartConfig.timeScale,
     barSpacing: 6,
-    minBarSpacing: 3,
+    minBarSpacing: 0.5, // Allow even more zoom out on mobile
     rightOffset: 3,
   },
   handleScroll: {
@@ -161,7 +119,7 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
   handleScale: {
     axisPressedMouseMove: {
       time: true,
-      price: false, // Disable price axis drag on mobile
+      price: true, // Enable y-axis drag to zoom on mobile
     },
     axisDoubleClickReset: {
       time: true,
