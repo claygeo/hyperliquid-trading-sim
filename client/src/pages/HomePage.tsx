@@ -7,44 +7,35 @@ export function HomePage() {
 
   return (
     <div className="h-[100dvh] bg-black text-white overflow-hidden flex flex-col">
-      {/* Gradient background */}
+      {/* Subtle gradient background */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(0,212,255,0.15),transparent)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_50%_at_80%_50%,rgba(153,69,255,0.08),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(0,212,255,0.12),transparent)]" />
       </div>
 
-      {/* Minimal Header - just auth buttons */}
-      <header className="relative z-10 py-3 px-4 md:px-6 flex justify-end">
-        <nav className="flex items-center gap-2">
-          {isAuthenticated ? (
-            <Link to="/trade">
-              <Button variant="primary" size="sm">Trade</Button>
+      {/* Header - only show auth buttons when not logged in */}
+      {!isAuthenticated && (
+        <header className="relative z-10 py-3 px-4 md:px-6 flex justify-end">
+          <nav className="flex items-center gap-2">
+            <Link to="/login">
+              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+                Login
+              </Button>
             </Link>
-          ) : (
-            <>
-              <Link to="/login">
-                <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-                  Login
-                </Button>
-              </Link>
-              <Link to="/register">
-                <Button variant="primary" size="sm">Sign Up</Button>
-              </Link>
-            </>
-          )}
-        </nav>
-      </header>
+            <Link to="/register">
+              <Button variant="primary" size="sm">Sign Up</Button>
+            </Link>
+          </nav>
+        </header>
+      )}
 
       {/* Main Content - centered vertically */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-8 -mt-8">
+      <main className={`relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-8 ${isAuthenticated ? '' : '-mt-8'}`}>
         <div className="text-center max-w-2xl mx-auto">
           {/* Hero Text */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold font-mono mb-4 leading-tight tracking-tight">
             Paper Trade
             <br />
-            <span className="bg-gradient-to-r from-accent-cyan via-accent-green to-accent-cyan bg-clip-text text-transparent">
-              Perpetuals
-            </span>
+            <span className="text-accent-cyan">Perpetuals</span>
           </h1>
 
           <p className="text-base sm:text-lg text-gray-400 mb-8 max-w-md mx-auto">
@@ -78,7 +69,7 @@ export function HomePage() {
             </div>
             <div className="w-px h-10 bg-gray-800" />
             <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-bold font-mono text-accent-purple">50x</div>
+              <div className="text-2xl sm:text-3xl font-bold font-mono text-accent-cyan">50x</div>
               <div className="text-xs text-gray-500 mt-1">Max Leverage</div>
             </div>
           </div>

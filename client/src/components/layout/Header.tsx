@@ -85,8 +85,8 @@ export function Header() {
                     to="/profile"
                     className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-gray-800/50 transition-colors"
                   >
-                    <div className="w-6 h-6 bg-gradient-to-br from-accent-cyan to-accent-purple rounded-full flex items-center justify-center">
-                      <span className="text-white text-xs font-medium">
+                    <div className="w-6 h-6 bg-accent-cyan/20 rounded-full flex items-center justify-center">
+                      <span className="text-accent-cyan text-xs font-medium">
                         {user?.username?.charAt(0).toUpperCase()}
                       </span>
                     </div>
@@ -138,8 +138,8 @@ export function Header() {
               onClick={() => setMobileMenuOpen(false)}
               className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50"
             >
-              <div className="w-10 h-10 bg-gradient-to-br from-accent-cyan to-accent-purple rounded-full flex items-center justify-center">
-                <span className="text-white font-medium text-lg">
+              <div className="w-10 h-10 bg-accent-cyan/20 rounded-full flex items-center justify-center">
+                <span className="text-accent-cyan font-medium text-lg">
                   {user?.username?.charAt(0).toUpperCase()}
                 </span>
               </div>
