@@ -2,7 +2,6 @@ import { OrderbookRow } from './OrderbookRow';
 import { OrderbookSpread } from './OrderbookSpread';
 import { getMaxTotal } from './orderbook.utils';
 import type { Orderbook as OrderbookType } from '../../types/market';
-import { Spinner } from '../ui/Spinner';
 
 interface OrderbookProps {
   orderbook: OrderbookType | null;
@@ -13,18 +12,27 @@ interface OrderbookProps {
 }
 
 export function Orderbook({ orderbook, asset, isLoading, compact = false, onPriceClick }: OrderbookProps) {
-  if (isLoading || !orderbook) {
+  // Show loading or empty state
+  if (!orderbook || (orderbook.bids.length === 0 && orderbook.asks.length === 0)) {
     return (
-      <div className="h-full bg-bg-primary rounded-xl border border-border p-4 flex items-center justify-center">
-        <Spinner />
+      <div className="h-full bg-bg-primary flex flex-col overflow-hidden">
+        <div className={compact ? "px-2 py-1.5 border-b border-border flex-shrink-0" : "px-4 py-2 border-b border-border flex-shrink-0"}>
+          <h3 className={compact ? "text-[10px] font-semibold text-gray-400 uppercase tracking-wide" : "text-xs font-semibold text-gray-400"}>Order Book</h3>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-6 h-6 border-2 border-accent-cyan/50 border-t-accent-cyan rounded-full animate-spin" />
+            <span className="text-xs text-gray-500">Loading {asset}...</span>
+          </div>
+        </div>
       </div>
     );
   }
 
   const maxTotal = getMaxTotal(orderbook.bids, orderbook.asks);
 
-  // For mobile compact view, show fewer levels
-  const displayLevels = compact ? 8 : 10;
+  // Show more levels on mobile to fill space
+  const displayLevels = compact ? 12 : 10;
   const asks = orderbook.asks.slice(0, displayLevels);
   const bids = orderbook.bids.slice(0, displayLevels);
 

@@ -9,6 +9,7 @@ interface ChartControlsProps {
   onAssetChange?: (asset: string) => void;
   isLoading?: boolean;
   showAssetSelector?: boolean;
+  compact?: boolean;
 }
 
 export function ChartControls({ 
@@ -18,6 +19,7 @@ export function ChartControls({
   onAssetChange,
   isLoading = false,
   showAssetSelector = false,
+  compact = false,
 }: ChartControlsProps) {
   const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -114,9 +116,12 @@ export function ChartControls({
               onKeyDown={(e) => handleKeyDown(e, index)}
               disabled={isLoading}
               className={cn(
-                'relative px-2 md:px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap',
+                'relative font-medium rounded-md transition-all duration-200 whitespace-nowrap',
                 'focus:outline-none focus:ring-2 focus:ring-accent-cyan/50 focus:ring-offset-1 focus:ring-offset-bg-tertiary',
-                'min-w-[32px] md:min-w-[40px] touch-manipulation',
+                'touch-manipulation',
+                compact 
+                  ? 'px-2 py-1 text-[11px] min-w-[28px]' 
+                  : 'px-2 md:px-3 py-1.5 text-xs md:text-sm min-w-[32px] md:min-w-[40px]',
                 isSelected
                   ? 'bg-accent-cyan text-bg-primary shadow-sm'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated/50',

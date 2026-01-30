@@ -5,7 +5,8 @@ import {
   type ISeriesApi, 
   type CandlestickData, 
   type HistogramData,
-  type Time 
+  type Time,
+  CrosshairMode,
 } from 'lightweight-charts';
 import { ChartControls } from './ChartControls';
 import { CandleTooltip } from './CandleTooltip';
@@ -22,6 +23,7 @@ interface PriceChartProps {
   isLoading?: boolean;
   currentPrice?: number;
   showAssetSelector?: boolean;
+  compact?: boolean;
 }
 
 const isTouchDevice = () => {
@@ -40,6 +42,7 @@ export function PriceChart({
   isLoading,
   currentPrice,
   showAssetSelector = false,
+  compact = false,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -107,6 +110,37 @@ export function PriceChart({
       ...config,
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          width: 1,
+          color: 'rgba(255, 255, 255, 0.1)',
+          style: 0,
+        },
+        horzLine: {
+          width: 1,
+          color: 'rgba(255, 255, 255, 0.1)',
+          style: 0,
+        },
+      },
+      handleScroll: {
+        vertTouchDrag: true,
+        horzTouchDrag: true,
+        mouseWheel: true,
+        pressedMouseMove: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: {
+          time: true,
+          price: true,
+        },
+        axisDoubleClickReset: {
+          time: true,
+          price: true,
+        },
+        mouseWheel: true,
+        pinch: true,
+      },
     });
 
     // Add candlestick series
@@ -115,17 +149,17 @@ export function PriceChart({
       priceScaleId: 'right',
     });
 
-    // Add volume histogram series
+    // Add volume histogram series - smaller on mobile
     const volumeSeries = chart.addHistogramSeries({
       ...volumeConfig,
       priceScaleId: 'volume',
       priceFormat: { type: 'volume' },
     });
 
-    // Configure volume price scale
+    // Configure volume price scale - smaller volume bars
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.85,
+        top: compact ? 0.88 : 0.85,
         bottom: 0,
       },
       borderVisible: false,
@@ -139,6 +173,8 @@ export function PriceChart({
     chart.applyOptions({
       timeScale: {
         minBarSpacing: getMinBarSpacing(selectedTimeframe),
+        rightOffset: 5,
+        barSpacing: isMobile ? 6 : 8,
       },
     });
 
@@ -240,7 +276,7 @@ export function PriceChart({
       chartElement.removeEventListener('touchmove', handleTouchMove);
       chart.remove();
     };
-  }, [isMobile, resetChartZoom]);
+  }, [isMobile, resetChartZoom, compact]);
 
   useEffect(() => {
     if (chartRef.current) {
@@ -327,36 +363,43 @@ export function PriceChart({
     resetChartZoom();
   }, [resetChartZoom]);
 
+  // Compact header for mobile
+  const headerPadding = compact ? 'px-2 py-1.5' : 'px-3 md:px-4 py-2 md:py-3';
+  const headerHeight = compact ? 'pt-[52px]' : 'pt-[76px] md:pt-14';
+
   return (
     <div 
       className="relative h-full w-full bg-bg-primary rounded-xl border border-border overflow-hidden"
       onDoubleClick={handleDoubleClick}
     >
-      {/* Header */}
+      {/* Header - smaller on compact mode */}
       <div className="absolute top-0 left-0 right-0 z-10 bg-bg-primary/95 backdrop-blur-sm border-b border-border">
-        <div className="flex items-center justify-between px-3 md:px-4 py-2 md:py-3">
-          <div className="flex items-center gap-2 md:gap-4 min-w-0">
-            <h2 className="text-base md:text-lg font-semibold font-mono truncate">
+        <div className={`flex items-center justify-between ${headerPadding}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className={compact ? "text-sm font-semibold font-mono" : "text-base md:text-lg font-semibold font-mono"}>
               {selectedAsset}-PERP
             </h2>
             {displayPrice > 0 && (
-              <span className={`text-lg md:text-xl font-mono font-bold tabular-nums ${priceColor}`}>
+              <span className={`${compact ? 'text-base' : 'text-lg md:text-xl'} font-mono font-bold tabular-nums ${priceColor}`}>
                 ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             )}
           </div>
-          <div className="hidden md:block">
-            <ChartControls
-              selectedTimeframe={selectedTimeframe}
-              onTimeframeChange={onTimeframeChange}
-              selectedAsset={selectedAsset}
-              onAssetChange={onAssetChange}
-              isLoading={isLoading}
-              showAssetSelector={showAssetSelector}
-            />
-          </div>
+          {!compact && (
+            <div className="hidden md:block">
+              <ChartControls
+                selectedTimeframe={selectedTimeframe}
+                onTimeframeChange={onTimeframeChange}
+                selectedAsset={selectedAsset}
+                onAssetChange={onAssetChange}
+                isLoading={isLoading}
+                showAssetSelector={showAssetSelector}
+              />
+            </div>
+          )}
         </div>
-        <div className="md:hidden px-3 pb-2">
+        {/* Timeframe controls - inline for compact */}
+        <div className={compact ? 'px-2 pb-1.5' : 'md:hidden px-3 pb-2'}>
           <ChartControls
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={onTimeframeChange}
@@ -364,6 +407,7 @@ export function PriceChart({
             onAssetChange={onAssetChange}
             isLoading={isLoading}
             showAssetSelector={showAssetSelector}
+            compact={compact}
           />
         </div>
       </div>
@@ -371,7 +415,7 @@ export function PriceChart({
       {/* Chart container */}
       <div 
         ref={containerRef} 
-        className="h-full w-full pt-[76px] md:pt-14 touch-manipulation"
+        className={`h-full w-full ${headerHeight} touch-manipulation`}
         style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
       />
 
@@ -386,7 +430,7 @@ export function PriceChart({
       )}
 
       {/* Tooltip */}
-      {hoveredCandle && (
+      {hoveredCandle && !compact && (
         <CandleTooltip
           candle={hoveredCandle}
           position={tooltipPosition}
@@ -396,9 +440,9 @@ export function PriceChart({
       )}
 
       {/* Mobile helper text */}
-      {isMobile && showHelperText && sortedCandles.length > 0 && !isLoading && (
+      {isMobile && showHelperText && sortedCandles.length > 0 && !isLoading && !compact && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-bg-primary/80 px-3 py-1 rounded-full backdrop-blur-sm">
-          Pinch to zoom - Double-tap to reset
+          Pinch to zoom • Double-tap to reset
         </div>
       )}
     </div>

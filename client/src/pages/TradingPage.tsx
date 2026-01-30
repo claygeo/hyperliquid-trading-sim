@@ -181,40 +181,47 @@ export function TradingPage() {
     </div>
   );
 
+  // Mobile Header - Asset on left, toggle left-aligned, dot on right
   const MobileHeader = () => (
     <div className="md:hidden flex items-center justify-between px-2 py-1.5 bg-black border-b border-border">
-      <button 
-        onClick={() => setShowAssetSearch(true)}
-        className="flex items-center gap-1.5"
-      >
-        <span className="text-white font-semibold text-sm">{selectedAsset}</span>
-        <span className="text-gray-500 text-xs">PERP</span>
-        <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+      {/* Left side: Asset + Toggle */}
+      <div className="flex items-center gap-2">
+        {/* Asset selector */}
+        <button 
+          onClick={() => setShowAssetSearch(true)}
+          className="flex items-center gap-1"
+        >
+          <span className="text-white font-semibold text-sm">{selectedAsset}</span>
+          <span className="text-gray-500 text-xs">PERP</span>
+          <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
-      <div className="flex items-center gap-0.5 bg-bg-secondary rounded-md p-0.5">
-        <button
-          onClick={() => setMobileView('chart')}
-          className={cn(
-            'px-3 py-1.5 rounded text-xs font-medium transition-colors',
-            mobileView === 'chart' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
-          )}
-        >
-          Chart
-        </button>
-        <button
-          onClick={() => setMobileView('trade')}
-          className={cn(
-            'px-3 py-1.5 rounded text-xs font-medium transition-colors',
-            mobileView === 'trade' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
-          )}
-        >
-          Trade
-        </button>
+        {/* View toggles - left aligned */}
+        <div className="flex items-center gap-0.5 bg-bg-secondary rounded-md p-0.5 ml-2">
+          <button
+            onClick={() => setMobileView('chart')}
+            className={cn(
+              'px-2.5 py-1 rounded text-xs font-medium transition-colors',
+              mobileView === 'chart' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
+            )}
+          >
+            Chart
+          </button>
+          <button
+            onClick={() => setMobileView('trade')}
+            className={cn(
+              'px-2.5 py-1 rounded text-xs font-medium transition-colors',
+              mobileView === 'trade' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
+            )}
+          >
+            Trade
+          </button>
+        </div>
       </div>
 
+      {/* Right side: Connection status */}
       <div className={cn(
         'w-2 h-2 rounded-full',
         isConnected ? 'bg-accent-green' : 'bg-accent-red'
@@ -265,7 +272,11 @@ export function TradingPage() {
         <div className="flex-1 min-h-0 overflow-hidden">
           {mobileView === 'chart' ? (
             <div className="h-full flex flex-col">
-              <div className="flex-1 min-h-0">
+              {/* Chart takes remaining space minus positions */}
+              <div className={cn(
+                'min-h-0',
+                openPositions.length > 0 ? 'flex-1' : 'h-full'
+              )}>
                 <PriceChart
                   candles={currentCandles}
                   selectedAsset={selectedAsset}
@@ -273,10 +284,12 @@ export function TradingPage() {
                   onTimeframeChange={setSelectedTimeframe}
                   isLoading={isLoadingCandles}
                   currentPrice={currentPrice}
+                  compact
                 />
               </div>
+              {/* Positions at bottom */}
               {isAuthenticated && openPositions.length > 0 && (
-                <div className="flex-shrink-0 border-t border-border bg-bg-secondary max-h-28 overflow-y-auto">
+                <div className="flex-shrink-0 border-t border-border bg-bg-secondary max-h-32 overflow-y-auto">
                   <PositionPanel
                     positions={positionsWithLivePnl}
                     onClosePosition={handleClosePosition}

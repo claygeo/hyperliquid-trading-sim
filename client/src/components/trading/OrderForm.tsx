@@ -46,7 +46,6 @@ export function OrderForm({
   const inputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
 
-  // Handle external limit price from orderbook tap
   useEffect(() => {
     if (externalLimitPrice && externalLimitPrice > 0) {
       setLimitPrice(externalLimitPrice.toString());
@@ -142,15 +141,15 @@ export function OrderForm({
   };
 
   if (compact) {
-    // Mobile compact layout - fits in viewport without scroll
+    // Mobile compact layout - better spacing to fill screen
     return (
-      <div className="h-full flex flex-col bg-bg-secondary p-2 relative">
-        {/* Side selector - smaller */}
-        <div className="grid grid-cols-2 gap-1 mb-2">
+      <div className="h-full flex flex-col bg-bg-secondary p-3 relative">
+        {/* Side selector */}
+        <div className="grid grid-cols-2 gap-1.5 mb-3">
           <button
             onClick={() => setSide('long')}
             className={cn(
-              'py-2 rounded text-xs font-semibold transition-all',
+              'py-2.5 rounded text-xs font-semibold transition-all',
               side === 'long' ? 'bg-accent-green text-black' : 'bg-bg-tertiary text-gray-400'
             )}
           >
@@ -159,7 +158,7 @@ export function OrderForm({
           <button
             onClick={() => setSide('short')}
             className={cn(
-              'py-2 rounded text-xs font-semibold transition-all',
+              'py-2.5 rounded text-xs font-semibold transition-all',
               side === 'short' ? 'bg-accent-red text-white' : 'bg-bg-tertiary text-gray-400'
             )}
           >
@@ -167,14 +166,14 @@ export function OrderForm({
           </button>
         </div>
 
-        {/* Order type - inline */}
-        <div className="flex gap-1 mb-2">
+        {/* Order type */}
+        <div className="flex gap-1.5 mb-3">
           {(['market', 'limit'] as OrderType[]).map((type) => (
             <button
               key={type}
               onClick={() => setOrderType(type)}
               className={cn(
-                'flex-1 py-1.5 text-xs font-medium rounded transition-all capitalize',
+                'flex-1 py-2 text-xs font-medium rounded transition-all capitalize',
                 orderType === type ? 'bg-bg-elevated text-white' : 'bg-bg-tertiary text-gray-500'
               )}
             >
@@ -184,26 +183,26 @@ export function OrderForm({
         </div>
 
         {/* Price */}
-        <div className="flex items-center justify-between text-xs mb-2 px-1">
+        <div className="flex items-center justify-between text-xs mb-3 px-1">
           <span className="text-gray-500">Price</span>
           {orderType === 'market' ? (
-            <span className="text-accent-cyan font-mono">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="text-accent-cyan font-mono text-sm">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
           ) : (
             <input
               type="number"
               value={limitPrice}
               onChange={(e) => setLimitPrice(e.target.value)}
-              className="w-24 bg-bg-tertiary border border-border rounded px-2 py-1 text-right text-white font-mono text-xs focus:outline-none focus:border-accent-cyan"
+              className="w-28 bg-bg-tertiary border border-border rounded px-2 py-1.5 text-right text-white font-mono text-xs focus:outline-none focus:border-accent-cyan"
               placeholder="0.00"
             />
           )}
         </div>
 
-        {/* Leverage - better touch target */}
-        <div className="mb-2">
-          <div className="flex items-center justify-between text-xs mb-1 px-1">
+        {/* Leverage */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs mb-1.5 px-1">
             <span className="text-gray-500">Leverage</span>
-            <span className="text-white font-mono">{leverage}x</span>
+            <span className="text-white font-mono text-sm">{leverage}x</span>
           </div>
           <input
             type="range"
@@ -213,7 +212,7 @@ export function OrderForm({
             onChange={(e) => handleLeverageChange(parseInt(e.target.value))}
             className="w-full touch-slider"
           />
-          <div className="flex justify-between text-[9px] text-gray-600 px-1">
+          <div className="flex justify-between text-[10px] text-gray-600 px-1 mt-1">
             <span>1x</span>
             <span>10x</span>
             <span>25x</span>
@@ -222,8 +221,8 @@ export function OrderForm({
         </div>
 
         {/* Size input */}
-        <div className="mb-2">
-          <div className="flex items-center justify-between text-xs mb-1 px-1">
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs mb-1.5 px-1">
             <span className="text-gray-500">Size ({selectedAsset})</span>
             {sizeNum > 0 && <span className="text-gray-400 font-mono">= {formatUSD(notionalValue)}</span>}
           </div>
@@ -233,7 +232,7 @@ export function OrderForm({
             value={size}
             onChange={(e) => setSize(e.target.value)}
             className={cn(
-              'w-full bg-bg-tertiary border rounded px-3 py-2 text-white font-mono text-sm focus:outline-none',
+              'w-full bg-bg-tertiary border rounded px-3 py-2.5 text-white font-mono text-sm focus:outline-none',
               hasError ? 'border-accent-red' : 'border-border focus:border-accent-cyan'
             )}
             placeholder="0.00"
@@ -242,14 +241,14 @@ export function OrderForm({
         </div>
 
         {/* Quick percentages */}
-        <div className="grid grid-cols-4 gap-1 mb-2">
+        <div className="grid grid-cols-4 gap-1.5 mb-3">
           {[25, 50, 75, 100].map((percent) => (
             <button
               key={percent}
               type="button"
               onClick={() => setPercentage(percent)}
               className={cn(
-                'py-1.5 text-xs font-medium rounded transition-all',
+                'py-2 text-xs font-medium rounded transition-all',
                 selectedPercent === percent ? 'bg-accent-cyan/20 text-accent-cyan' : 'bg-bg-tertiary text-gray-500'
               )}
             >
@@ -258,25 +257,25 @@ export function OrderForm({
           ))}
         </div>
 
-        {/* Order details - only show if size entered */}
+        {/* Order details */}
         {sizeNum > 0 && (
-          <div className="flex justify-between text-xs text-gray-500 mb-2 px-1">
+          <div className="flex justify-between text-xs text-gray-500 mb-3 px-1">
             <span>Margin: <span className={cn('font-mono', canAfford ? 'text-white' : 'text-accent-red')}>{formatUSD(margin)}</span></span>
             <span>Liq: <span className="text-accent-yellow font-mono">${liquidationPrice.toFixed(2)}</span></span>
           </div>
         )}
 
         {/* Available */}
-        <div className="flex items-center justify-between text-xs mb-2 px-1">
+        <div className="flex items-center justify-between text-xs mb-3 px-1">
           <span className="text-gray-500">Available</span>
           <span className="text-white font-mono">{formatUSD(availableBalance)}</span>
         </div>
 
-        {/* Submit button - always visible */}
+        {/* Submit button */}
         <Button
           onClick={handleSubmit}
           variant={side === 'long' ? 'success' : 'danger'}
-          className="w-full py-2.5 text-sm font-semibold"
+          className="w-full py-3 text-sm font-semibold"
           isLoading={isPlacingOrder}
           disabled={sizeNum <= 0 || !canAfford || isPlacingOrder}
         >
@@ -286,19 +285,19 @@ export function OrderForm({
         {/* Login overlay */}
         {!isAuthenticated && (
           <div className="absolute inset-0 bg-bg-secondary/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-            <div className="w-10 h-10 mb-3 bg-accent-cyan/20 rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5 text-accent-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 mb-4 bg-accent-cyan/20 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-accent-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h3 className="text-white font-semibold text-sm mb-1">Login to Trade</h3>
-            <p className="text-gray-500 text-xs mb-3 text-center">Create a free account to start</p>
-            <div className="flex flex-col gap-2 w-full max-w-[150px]">
+            <h3 className="text-white font-semibold mb-1">Login to Trade</h3>
+            <p className="text-gray-500 text-sm mb-4 text-center">Create a free account to start</p>
+            <div className="flex flex-col gap-2 w-full max-w-[160px]">
               <Link to="/register">
-                <Button variant="primary" size="sm" className="w-full text-xs">Create Account</Button>
+                <Button variant="primary" size="sm" className="w-full">Create Account</Button>
               </Link>
               <Link to="/login">
-                <Button variant="ghost" size="sm" className="w-full text-xs text-gray-400">Login</Button>
+                <Button variant="ghost" size="sm" className="w-full text-gray-400">Login</Button>
               </Link>
             </div>
           </div>

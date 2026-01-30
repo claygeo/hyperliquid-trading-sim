@@ -41,7 +41,8 @@ export function OrderbookRow({ price, size, total, maxTotal, side, compact = fal
     <div 
       className={cn(
         'relative grid grid-cols-2 gap-1 font-mono transition-colors cursor-pointer',
-        compact ? 'px-2 py-[3px] text-[11px]' : 'px-3 py-1 text-xs',
+        // More vertical padding to fill space
+        compact ? 'px-2 py-[6px] text-[11px]' : 'px-3 py-[5px] text-xs',
         onClick && 'hover:bg-bg-tertiary active:bg-bg-elevated'
       )}
       onClick={handleClick}
