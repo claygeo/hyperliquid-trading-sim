@@ -49,8 +49,6 @@ export function ChartControls({
     setIsAssetDropdownOpen(false);
   };
 
-  const selectedAssetData = ASSET_LIST.find(a => a.symbol === selectedAsset);
-
   return (
     <div className="flex items-center gap-2">
       {/* Asset Selector */}
@@ -65,7 +63,6 @@ export function ChartControls({
               isLoading && 'opacity-50 cursor-not-allowed'
             )}
           >
-            <span className="text-lg">{selectedAssetData?.icon}</span>
             <span className="text-text-primary">{selectedAsset}</span>
             <svg 
               className={cn(
@@ -93,7 +90,6 @@ export function ChartControls({
                       : 'text-text-primary hover:bg-bg-tertiary'
                   )}
                 >
-                  <span className="text-lg">{asset.icon}</span>
                   <span>{asset.symbol}</span>
                   {asset.symbol === selectedAsset && (
                     <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
