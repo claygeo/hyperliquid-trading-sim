@@ -156,10 +156,10 @@ export function PriceChart({
       priceFormat: { type: 'volume' },
     });
 
-    // Configure volume price scale - smaller volume bars
+    // Configure volume price scale - smaller volume bars on mobile
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: compact ? 0.88 : 0.85,
+        top: compact ? 0.92 : 0.85,
         bottom: 0,
       },
       borderVisible: false,
@@ -363,9 +363,9 @@ export function PriceChart({
     resetChartZoom();
   }, [resetChartZoom]);
 
-  // Compact header for mobile
-  const headerPadding = compact ? 'px-2 py-1.5' : 'px-3 md:px-4 py-2 md:py-3';
-  const headerHeight = compact ? 'pt-[52px]' : 'pt-[76px] md:pt-14';
+  // Compact header for mobile - minimal height
+  const headerPadding = compact ? 'px-2 py-0.5' : 'px-3 md:px-4 py-2 md:py-3';
+  const headerHeight = compact ? 'pt-[40px]' : 'pt-[76px] md:pt-14';
 
   return (
     <div 

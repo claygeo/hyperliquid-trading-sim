@@ -143,13 +143,13 @@ export function OrderForm({
   if (compact) {
     // Mobile compact layout - better spacing to fill screen
     return (
-      <div className="h-full flex flex-col bg-bg-secondary p-3 relative">
+      <div className="h-full flex flex-col bg-bg-secondary p-4 relative">
         {/* Side selector */}
-        <div className="grid grid-cols-2 gap-1.5 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-4">
           <button
             onClick={() => setSide('long')}
             className={cn(
-              'py-2.5 rounded text-xs font-semibold transition-all',
+              'py-3 rounded text-sm font-semibold transition-all',
               side === 'long' ? 'bg-accent-green text-black' : 'bg-bg-tertiary text-gray-400'
             )}
           >
@@ -158,7 +158,7 @@ export function OrderForm({
           <button
             onClick={() => setSide('short')}
             className={cn(
-              'py-2.5 rounded text-xs font-semibold transition-all',
+              'py-3 rounded text-sm font-semibold transition-all',
               side === 'short' ? 'bg-accent-red text-white' : 'bg-bg-tertiary text-gray-400'
             )}
           >
@@ -167,13 +167,13 @@ export function OrderForm({
         </div>
 
         {/* Order type */}
-        <div className="flex gap-1.5 mb-3">
+        <div className="flex gap-2 mb-4">
           {(['market', 'limit'] as OrderType[]).map((type) => (
             <button
               key={type}
               onClick={() => setOrderType(type)}
               className={cn(
-                'flex-1 py-2 text-xs font-medium rounded transition-all capitalize',
+                'flex-1 py-2.5 text-sm font-medium rounded transition-all capitalize',
                 orderType === type ? 'bg-bg-elevated text-white' : 'bg-bg-tertiary text-gray-500'
               )}
             >
@@ -183,26 +183,26 @@ export function OrderForm({
         </div>
 
         {/* Price */}
-        <div className="flex items-center justify-between text-xs mb-3 px-1">
+        <div className="flex items-center justify-between text-sm mb-4 px-1">
           <span className="text-gray-500">Price</span>
           {orderType === 'market' ? (
-            <span className="text-accent-cyan font-mono text-sm">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="text-accent-cyan font-mono text-base">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
           ) : (
             <input
               type="number"
               value={limitPrice}
               onChange={(e) => setLimitPrice(e.target.value)}
-              className="w-28 bg-bg-tertiary border border-border rounded px-2 py-1.5 text-right text-white font-mono text-xs focus:outline-none focus:border-accent-cyan"
+              className="w-32 bg-bg-tertiary border border-border rounded px-3 py-2 text-right text-white font-mono text-sm focus:outline-none focus:border-accent-cyan"
               placeholder="0.00"
             />
           )}
         </div>
 
         {/* Leverage */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-xs mb-1.5 px-1">
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-sm mb-2 px-1">
             <span className="text-gray-500">Leverage</span>
-            <span className="text-white font-mono text-sm">{leverage}x</span>
+            <span className="text-white font-mono text-base">{leverage}x</span>
           </div>
           <input
             type="range"
@@ -212,7 +212,7 @@ export function OrderForm({
             onChange={(e) => handleLeverageChange(parseInt(e.target.value))}
             className="w-full touch-slider"
           />
-          <div className="flex justify-between text-[10px] text-gray-600 px-1 mt-1">
+          <div className="flex justify-between text-xs text-gray-600 px-1 mt-1.5">
             <span>1x</span>
             <span>10x</span>
             <span>25x</span>
@@ -221,8 +221,8 @@ export function OrderForm({
         </div>
 
         {/* Size input */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-xs mb-1.5 px-1">
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-sm mb-2 px-1">
             <span className="text-gray-500">Size ({selectedAsset})</span>
             {sizeNum > 0 && <span className="text-gray-400 font-mono">= {formatUSD(notionalValue)}</span>}
           </div>
@@ -232,7 +232,7 @@ export function OrderForm({
             value={size}
             onChange={(e) => setSize(e.target.value)}
             className={cn(
-              'w-full bg-bg-tertiary border rounded px-3 py-2.5 text-white font-mono text-sm focus:outline-none',
+              'w-full bg-bg-tertiary border rounded px-3 py-3 text-white font-mono text-base focus:outline-none',
               hasError ? 'border-accent-red' : 'border-border focus:border-accent-cyan'
             )}
             placeholder="0.00"
@@ -241,14 +241,14 @@ export function OrderForm({
         </div>
 
         {/* Quick percentages */}
-        <div className="grid grid-cols-4 gap-1.5 mb-3">
+        <div className="grid grid-cols-4 gap-2 mb-4">
           {[25, 50, 75, 100].map((percent) => (
             <button
               key={percent}
               type="button"
               onClick={() => setPercentage(percent)}
               className={cn(
-                'py-2 text-xs font-medium rounded transition-all',
+                'py-2.5 text-sm font-medium rounded transition-all',
                 selectedPercent === percent ? 'bg-accent-cyan/20 text-accent-cyan' : 'bg-bg-tertiary text-gray-500'
               )}
             >
@@ -259,14 +259,14 @@ export function OrderForm({
 
         {/* Order details */}
         {sizeNum > 0 && (
-          <div className="flex justify-between text-xs text-gray-500 mb-3 px-1">
+          <div className="flex justify-between text-sm text-gray-500 mb-4 px-1">
             <span>Margin: <span className={cn('font-mono', canAfford ? 'text-white' : 'text-accent-red')}>{formatUSD(margin)}</span></span>
             <span>Liq: <span className="text-accent-yellow font-mono">${liquidationPrice.toFixed(2)}</span></span>
           </div>
         )}
 
         {/* Available */}
-        <div className="flex items-center justify-between text-xs mb-3 px-1">
+        <div className="flex items-center justify-between text-sm mb-4 px-1">
           <span className="text-gray-500">Available</span>
           <span className="text-white font-mono">{formatUSD(availableBalance)}</span>
         </div>
@@ -275,7 +275,7 @@ export function OrderForm({
         <Button
           onClick={handleSubmit}
           variant={side === 'long' ? 'success' : 'danger'}
-          className="w-full py-3 text-sm font-semibold"
+          className="w-full py-3.5 text-sm font-semibold mt-auto"
           isLoading={isPlacingOrder}
           disabled={sizeNum <= 0 || !canAfford || isPlacingOrder}
         >

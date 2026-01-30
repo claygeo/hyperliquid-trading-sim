@@ -181,25 +181,28 @@ export function TradingPage() {
     </div>
   );
 
-  // Mobile Header - Asset on left, toggle left-aligned, dot on right
+  // Mobile Header - Asset on left, toggle on far right with dot
   const MobileHeader = () => (
     <div className="md:hidden flex items-center justify-between px-2 py-1.5 bg-black border-b border-border">
-      {/* Left side: Asset + Toggle */}
-      <div className="flex items-center gap-2">
-        {/* Asset selector */}
-        <button 
-          onClick={() => setShowAssetSearch(true)}
-          className="flex items-center gap-1"
-        >
-          <span className="text-white font-semibold text-sm">{selectedAsset}</span>
-          <span className="text-gray-500 text-xs">PERP</span>
-          <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+      {/* Left side: Asset selector */}
+      <button 
+        onClick={() => setShowAssetSearch(true)}
+        className="flex items-center gap-1"
+      >
+        <span className="text-white font-semibold text-sm">{selectedAsset}</span>
+        <span className="text-gray-500 text-xs">PERP</span>
+        <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
 
-        {/* View toggles - left aligned */}
-        <div className="flex items-center gap-0.5 bg-bg-secondary rounded-md p-0.5 ml-2">
+      {/* Right side: Connection dot + View toggles */}
+      <div className="flex items-center gap-2">
+        <div className={cn(
+          'w-2 h-2 rounded-full',
+          isConnected ? 'bg-accent-green' : 'bg-accent-red'
+        )} />
+        <div className="flex items-center gap-0.5 bg-bg-secondary rounded-md p-0.5">
           <button
             onClick={() => setMobileView('chart')}
             className={cn(
@@ -220,12 +223,6 @@ export function TradingPage() {
           </button>
         </div>
       </div>
-
-      {/* Right side: Connection status */}
-      <div className={cn(
-        'w-2 h-2 rounded-full',
-        isConnected ? 'bg-accent-green' : 'bg-accent-red'
-      )} />
     </div>
   );
 
