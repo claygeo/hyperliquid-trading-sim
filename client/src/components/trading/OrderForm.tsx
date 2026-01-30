@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { TRADING_CONSTANTS } from '../../config/constants';
 import { formatUSD, calculateMargin, calculateLiquidationPrice } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
+import { useAuthStore } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
 import type { OrderSide, OrderType } from '../../types/trading';
 
@@ -31,6 +33,7 @@ export function OrderForm({
   isPlacingOrder,
   compact = false,
 }: OrderFormProps) {
+  const { isAuthenticated } = useAuthStore();
   const [side, setSide] = useState<OrderSide>('long');
   const [orderType, setOrderType] = useState<OrderType>('market');
   const [size, setSize] = useState('');
@@ -144,7 +147,7 @@ export function OrderForm({
 
   return (
     <div className={cn(
-      'bg-bg-secondary rounded-xl border border-border transition-all duration-300',
+      'bg-bg-secondary rounded-xl border border-border transition-all duration-300 relative',
       compact ? 'p-3' : 'p-4',
       showSuccess && 'border-accent-green/50 shadow-[0_0_20px_rgba(0,255,136,0.1)]'
     )}>
@@ -314,6 +317,33 @@ export function OrderForm({
           )}
         </Button>
       </form>
+
+      {/* Login prompt overlay for non-authenticated users */}
+      {!isAuthenticated && (
+        <div className="absolute inset-0 bg-bg-secondary/95 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-3 bg-gradient-to-br from-accent-cyan to-accent-purple rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h3 className="text-white font-semibold mb-1">Login to Trade</h3>
+            <p className="text-text-muted text-sm mb-4">Create a free account to start paper trading</p>
+            <div className="flex flex-col gap-2">
+              <Link to="/register">
+                <Button variant="primary" size="sm" className="w-full">
+                  Create Account
+                </Button>
+              </Link>
+              <Link to="/login">
+                <Button variant="ghost" size="sm" className="w-full text-gray-400">
+                  Already have an account? Login
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

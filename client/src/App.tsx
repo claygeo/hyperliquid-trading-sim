@@ -33,14 +33,13 @@ export default function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* Trading page accessible without login - order form will prompt login */}
       <Route
         path="/trade"
         element={
-          <AuthGuard>
-            <MainLayout>
-              <TradingPage />
-            </MainLayout>
-          </AuthGuard>
+          <MainLayout>
+            <TradingPage />
+          </MainLayout>
         }
       />
       <Route
