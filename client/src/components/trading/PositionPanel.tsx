@@ -10,9 +10,10 @@ interface PositionPanelProps {
   positions: Position[];
   onClosePosition: (positionId: string) => Promise<void>;
   isLoading?: boolean;
+  compact?: boolean;
 }
 
-export function PositionPanel({ positions, onClosePosition, isLoading }: PositionPanelProps) {
+export function PositionPanel({ positions, onClosePosition, isLoading, compact = false }: PositionPanelProps) {
   const [closingPosition, setClosingPosition] = useState<Position | null>(null);
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const { addToast } = useToast();
@@ -58,7 +59,7 @@ export function PositionPanel({ positions, onClosePosition, isLoading }: Positio
 
   if (isLoading) {
     return (
-      <div className="bg-bg-secondary rounded-xl border border-border p-4 flex items-center justify-center h-full">
+      <div className="bg-bg-primary rounded-xl border border-border p-4 flex items-center justify-center h-full">
         <Spinner />
       </div>
     );
@@ -66,11 +67,11 @@ export function PositionPanel({ positions, onClosePosition, isLoading }: Positio
 
   return (
     <>
-      <div className="bg-bg-secondary rounded-xl border border-border h-full flex flex-col">
+      <div className={`bg-bg-primary rounded-xl border border-border h-full flex flex-col ${compact ? 'text-xs' : ''}`}>
         {/* Header */}
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
-          <h3 className="text-sm font-semibold text-text-primary">
-            Open Positions ({openPositions.length})
+        <div className={`${compact ? 'px-2 py-2' : 'px-4 py-3'} border-b border-border flex items-center justify-between flex-shrink-0`}>
+          <h3 className={`${compact ? 'text-xs' : 'text-sm'} font-semibold text-text-primary`}>
+            Positions ({openPositions.length})
           </h3>
         </div>
 

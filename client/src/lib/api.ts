@@ -3,10 +3,12 @@ import type {
   Account,
   Position,
   PlaceOrderRequest,
+  LimitOrder,
   TradeHistory,
 } from '../types/trading';
 import type { LeaderboardEntry, UserStats } from '../types/user';
 import type { Candle, MarketData } from '../types/market';
+import type { Asset } from '../config/assets';
 
 class ApiClient {
   private baseUrl: string;
@@ -88,6 +90,23 @@ class ApiClient {
     });
   }
 
+  async placeLimitOrder(order: PlaceOrderRequest & { price: number }): Promise<LimitOrder> {
+    return this.request<LimitOrder>('/api/trading/limit-order', {
+      method: 'POST',
+      body: JSON.stringify(order),
+    });
+  }
+
+  async cancelLimitOrder(orderId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/trading/limit-order/${orderId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLimitOrders(): Promise<LimitOrder[]> {
+    return this.request<LimitOrder[]>('/api/trading/limit-orders');
+  }
+
   async getPositions(): Promise<Position[]> {
     return this.request<Position[]>('/api/trading/positions');
   }
@@ -108,6 +127,10 @@ class ApiClient {
   }
 
   // Market
+  async getAssets(): Promise<Asset[]> {
+    return this.request<Asset[]>('/api/market/assets');
+  }
+
   async getCandles(
     asset: string,
     timeframe: string,

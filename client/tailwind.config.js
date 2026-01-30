@@ -7,34 +7,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Terminal/Trading aesthetic
+        // Darker trading theme
         bg: {
-          primary: '#0a0a0f',
-          secondary: '#12121a',
-          tertiary: '#1a1a24',
-          elevated: '#22222e',
+          primary: '#000000',
+          secondary: '#0b0b0f',
+          tertiary: '#12131a',
+          elevated: '#1a1b23',
         },
         accent: {
           cyan: '#00d4ff',
-          green: '#00ff88',
-          red: '#ff3366',
-          yellow: '#ffcc00',
+          green: '#0ecb81',
+          red: '#f6465d',
+          yellow: '#f0b90b',
           purple: '#9945ff',
         },
         text: {
-          primary: '#ffffff',
-          secondary: '#a0a0b0',
-          muted: '#606070',
+          primary: '#eaecef',
+          secondary: '#848e9c',
+          muted: '#5e6673',
         },
         border: {
-          DEFAULT: '#2a2a3a',
-          bright: '#3a3a4a',
+          DEFAULT: '#1e2026',
+          bright: '#2b3139',
         },
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
         display: ['Orbitron', 'sans-serif'],
-        sans: ['Space Grotesk', 'sans-serif'],
+        sans: ['Inter', 'Space Grotesk', 'sans-serif'],
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -63,10 +63,6 @@ export default {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'grid-pattern': 'linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px)',
-      },
-      backgroundSize: {
-        'grid': '20px 20px',
       },
     },
   },

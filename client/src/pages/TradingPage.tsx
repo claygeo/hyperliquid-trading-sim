@@ -5,22 +5,25 @@ import { RecentTrades } from '../components/trades/RecentTrades';
 import { OrderForm } from '../components/trading/OrderForm';
 import { PositionPanel } from '../components/trading/PositionPanel';
 import { AccountStats } from '../components/trading/AccountStats';
-import { StressTestPanel } from '../components/stress-test/StressTestPanel';
+import { OpenOrders } from '../components/trading/OpenOrders';
 import { useMarketDataStore } from '../hooks/useMarketData';
 import { usePositionsStore } from '../hooks/usePositions';
 import { useAccountStore } from '../hooks/useAccount';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useAuthStore } from '../hooks/useAuth';
+import { useAssetsStore } from '../hooks/useAssets';
 import { useToast } from '../context/ToastContext';
-import { ASSET_LIST } from '../config/assets';
 import { cn } from '../lib/utils';
 import type { Position } from '../types/trading';
 
-type MobileTab = 'chart' | 'trade' | 'positions';
+type MobileView = 'chart' | 'trade';
 
 export function TradingPage() {
-  const [showStressTest, setShowStressTest] = useState(false);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chart');
+  const [mobileView, setMobileView] = useState<MobileView>('chart');
   const { addToast } = useToast();
+  const { isAuthenticated } = useAuthStore();
+  const { assets, fetchAssets, getFilteredAssets, searchQuery, setSearchQuery } = useAssetsStore();
+  const [showAssetSearch, setShowAssetSearch] = useState(false);
   
   const {
     selectedAsset,
@@ -42,9 +45,13 @@ export function TradingPage() {
 
   const currentCandles = candles.get(`${selectedAsset}-${selectedTimeframe}`) || [];
 
-  // Calculate live PnL for positions using current market price
+  // Fetch assets on mount
+  useEffect(() => {
+    fetchAssets();
+  }, []);
+
+  // Calculate live PnL for positions
   const positionsWithLivePnl: Position[] = positions.map((position) => {
-    // Use current price from market data if available and matches asset
     if (position.asset !== selectedAsset || currentPrice <= 0) {
       return position;
     }
@@ -65,29 +72,37 @@ export function TradingPage() {
   useEffect(() => {
     if (isConnected) {
       subscribeToAsset(selectedAsset);
-      subscribeToPositions();
+      if (isAuthenticated) {
+        subscribeToPositions();
+      }
     }
-  }, [isConnected, selectedAsset]);
+  }, [isConnected, selectedAsset, isAuthenticated]);
 
   useEffect(() => {
     fetchCandles(selectedAsset, selectedTimeframe);
-    fetchPositions();
-    fetchAccount();
-    fetchStats();
-  }, [selectedAsset, selectedTimeframe]);
+    if (isAuthenticated) {
+      fetchPositions();
+      fetchAccount();
+      fetchStats();
+    }
+  }, [selectedAsset, selectedTimeframe, isAuthenticated]);
 
   const handlePlaceOrder = async (order: Parameters<typeof placeOrder>[0]) => {
+    if (!isAuthenticated) {
+      addToast({
+        type: 'error',
+        title: 'Login Required',
+        message: 'Please login to place orders',
+      });
+      return;
+    }
     await placeOrder(order);
-    // Refresh account after order
     fetchAccount();
     fetchPositions();
-    // Switch to positions tab on mobile after placing order
-    setMobileTab('positions');
   };
 
   const handleClosePosition = async (positionId: string) => {
     await closePosition(positionId);
-    // Refresh account and stats after close
     fetchAccount();
     fetchStats();
     fetchPositions();
@@ -95,7 +110,6 @@ export function TradingPage() {
 
   const handleResetAccount = async () => {
     await resetAccount();
-    // Refresh positions (should be empty now)
     fetchPositions();
     addToast({
       type: 'success',
@@ -104,127 +118,212 @@ export function TradingPage() {
     });
   };
 
-  // Mobile asset selector component
-  const AssetSelector = () => (
-    <div className="flex items-center gap-1 md:gap-2 bg-bg-secondary rounded-lg p-1 md:p-2 border border-border overflow-x-auto">
-      {ASSET_LIST.map((asset) => (
-        <button
-          key={asset.symbol}
-          onClick={() => setSelectedAsset(asset.symbol)}
-          className={cn(
-            'flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap text-sm md:text-base',
-            selectedAsset === asset.symbol
-              ? 'bg-accent-cyan text-bg-primary shadow-[0_0_15px_rgba(0,212,255,0.2)]'
-              : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
-          )}
-        >
-          <span className="text-base md:text-lg">{asset.icon}</span>
-          <span>{asset.symbol}</span>
-        </button>
-      ))}
+  const handleAssetSelect = (symbol: string) => {
+    setSelectedAsset(symbol);
+    setShowAssetSearch(false);
+    setSearchQuery('');
+  };
 
-      <div className="ml-auto flex items-center gap-2 pl-2">
-        <div className={cn(
-          'w-2 h-2 rounded-full transition-all duration-300',
-          isConnected ? 'bg-accent-green shadow-[0_0_8px_rgba(0,255,136,0.5)]' : 'bg-accent-red'
-        )} />
-        <span className="text-xs text-text-muted hidden sm:inline">
-          {isConnected ? 'Live' : 'Offline'}
-        </span>
+  const filteredAssets = getFilteredAssets();
+
+  // Asset search modal
+  const AssetSearchModal = () => (
+    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm">
+      <div className="flex flex-col h-full">
+        {/* Search header */}
+        <div className="p-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => { setShowAssetSearch(false); setSearchQuery(''); }}
+              className="p-2 text-gray-400 hover:text-white"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <input
+              type="text"
+              placeholder="Search markets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-accent-cyan"
+              autoFocus
+            />
+          </div>
+        </div>
+        
+        {/* Asset list */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredAssets.map((asset) => (
+            <button
+              key={asset.symbol}
+              onClick={() => handleAssetSelect(asset.symbol)}
+              className={cn(
+                'w-full flex items-center justify-between px-4 py-3 border-b border-gray-800/50 transition-colors',
+                asset.symbol === selectedAsset ? 'bg-accent-cyan/10' : 'hover:bg-gray-900'
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-white font-medium">{asset.symbol}</span>
+                <span className="text-gray-500 text-sm">PERP</span>
+              </div>
+              {asset.symbol === selectedAsset && (
+                <svg className="w-5 h-5 text-accent-cyan" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 
-  // Mobile tabs component
-  const MobileTabs = () => (
-    <div className="md:hidden flex bg-bg-secondary rounded-lg p-1 border border-border">
-      {[
-        { id: 'chart', label: 'Chart' },
-        { id: 'trade', label: 'Trade' },
-        { id: 'positions', label: 'Positions', badge: positions.length },
-      ].map((tab) => (
+  // Mobile Header with asset selector and view toggles
+  const MobileHeader = () => (
+    <div className="md:hidden flex items-center justify-between px-3 py-2 bg-bg-primary border-b border-border">
+      {/* Asset selector */}
+      <button 
+        onClick={() => setShowAssetSearch(true)}
+        className="flex items-center gap-2"
+      >
+        <span className="text-white font-semibold">{selectedAsset}</span>
+        <span className="text-gray-500 text-sm">PERP</span>
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* View toggles - Binance style icons */}
+      <div className="flex items-center gap-1 bg-bg-secondary rounded-lg p-1">
         <button
-          key={tab.id}
-          onClick={() => setMobileTab(tab.id as MobileTab)}
+          onClick={() => setMobileView('chart')}
           className={cn(
-            'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all relative',
-            mobileTab === tab.id
-              ? 'bg-accent-cyan text-bg-primary'
-              : 'text-text-secondary'
+            'p-2 rounded-md transition-colors',
+            mobileView === 'chart' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
           )}
+          title="Chart View"
         >
-          <span>{tab.label}</span>
-          {tab.badge !== undefined && tab.badge > 0 && (
-            <span className={cn(
-              'absolute -top-1 -right-1 w-4 h-4 text-[10px] rounded-full flex items-center justify-center',
-              mobileTab === tab.id ? 'bg-bg-primary text-accent-cyan' : 'bg-accent-cyan text-bg-primary'
-            )}>
-              {tab.badge}
-            </span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4v16" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setMobileView('trade')}
+          className={cn(
+            'p-2 rounded-md transition-colors',
+            mobileView === 'trade' ? 'bg-bg-tertiary text-white' : 'text-gray-500'
           )}
+          title="Trade View"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Connection status */}
+      <div className={cn(
+        'w-2 h-2 rounded-full',
+        isConnected ? 'bg-accent-green' : 'bg-accent-red'
+      )} />
+    </div>
+  );
+
+  // Desktop asset selector
+  const DesktopAssetSelector = () => (
+    <div className="flex items-center gap-2 bg-bg-secondary rounded-lg p-2 border border-border overflow-x-auto">
+      <button
+        onClick={() => setShowAssetSearch(true)}
+        className="flex items-center gap-2 px-3 py-1.5 bg-bg-tertiary rounded-lg hover:bg-bg-elevated transition-colors"
+      >
+        <span className="text-white font-medium">{selectedAsset}</span>
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Quick asset buttons */}
+      {['BTC', 'ETH', 'SOL', 'DOGE', 'PEPE'].filter(s => s !== selectedAsset).slice(0, 4).map((symbol) => (
+        <button
+          key={symbol}
+          onClick={() => setSelectedAsset(symbol)}
+          className="px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-bg-tertiary rounded-lg transition-colors"
+        >
+          {symbol}
         </button>
       ))}
+
+      <div className="ml-auto flex items-center gap-2">
+        <div className={cn(
+          'w-2 h-2 rounded-full',
+          isConnected ? 'bg-accent-green' : 'bg-accent-red'
+        )} />
+        <span className="text-xs text-gray-500">{isConnected ? 'Live' : 'Offline'}</span>
+      </div>
     </div>
   );
 
   return (
-    <div className="h-full p-2 md:p-4 overflow-hidden flex flex-col">
+    <div className="h-full overflow-hidden flex flex-col bg-black">
+      {/* Asset search modal */}
+      {showAssetSearch && <AssetSearchModal />}
+
       {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col gap-2 h-full">
-        {/* Asset selector */}
-        <AssetSelector />
+      <div className="md:hidden flex flex-col h-full">
+        <MobileHeader />
         
-        {/* Mobile tabs */}
-        <MobileTabs />
-
-        {/* Tab content */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {mobileTab === 'chart' && (
-            <div className="h-full">
-              <PriceChart
-                candles={currentCandles}
-                selectedAsset={selectedAsset}
-                selectedTimeframe={selectedTimeframe}
-                onTimeframeChange={setSelectedTimeframe}
-                isLoading={isLoadingCandles}
-                currentPrice={currentPrice}
-              />
+          {mobileView === 'chart' ? (
+            <div className="h-full flex flex-col">
+              <div className="flex-1 min-h-0">
+                <PriceChart
+                  candles={currentCandles}
+                  selectedAsset={selectedAsset}
+                  selectedTimeframe={selectedTimeframe}
+                  onTimeframeChange={setSelectedTimeframe}
+                  isLoading={isLoadingCandles}
+                  currentPrice={currentPrice}
+                />
+              </div>
+              {/* Positions below chart on mobile */}
+              {isAuthenticated && positions.length > 0 && (
+                <div className="flex-shrink-0 max-h-32 overflow-y-auto border-t border-border">
+                  <PositionPanel
+                    positions={positionsWithLivePnl}
+                    onClosePosition={handleClosePosition}
+                    compact
+                  />
+                </div>
+              )}
             </div>
-          )}
-
-          {mobileTab === 'trade' && (
-            <div className="h-full overflow-y-auto space-y-3 pb-4">
-              <AccountStats
-                account={account}
-                stats={stats}
-                positions={positionsWithLivePnl}
-                onReset={handleResetAccount}
-              />
-              <OrderForm
-                selectedAsset={selectedAsset}
-                currentPrice={currentPrice}
-                availableBalance={account?.availableMargin || 0}
-                onPlaceOrder={handlePlaceOrder}
-                isPlacingOrder={isPlacingOrder}
-              />
-            </div>
-          )}
-
-          {mobileTab === 'positions' && (
-            <div className="h-full overflow-y-auto">
-              <PositionPanel
-                positions={positionsWithLivePnl}
-                onClosePosition={handleClosePosition}
-              />
+          ) : (
+            <div className="h-full flex">
+              {/* Orderbook - left side */}
+              <div className="w-1/2 border-r border-border overflow-hidden">
+                <Orderbook orderbook={orderbook} asset={selectedAsset} compact />
+              </div>
+              
+              {/* Order form - right side */}
+              <div className="w-1/2 p-2 overflow-y-auto">
+                <OrderForm
+                  selectedAsset={selectedAsset}
+                  currentPrice={currentPrice}
+                  availableBalance={account?.availableMargin || 100000}
+                  onPlaceOrder={handlePlaceOrder}
+                  isPlacingOrder={isPlacingOrder}
+                  compact
+                />
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Desktop Layout (unchanged) */}
-      <div className="hidden md:grid h-full grid-cols-12 gap-4">
+      {/* Desktop Layout */}
+      <div className="hidden md:flex h-full p-2 gap-2">
         {/* Left column - Orderbook & Recent Trades */}
-        <div className="col-span-2 flex flex-col gap-4 min-h-0">
+        <div className="w-64 flex-shrink-0 flex flex-col gap-2">
           <div className="flex-1 min-h-0 overflow-hidden">
             <Orderbook orderbook={orderbook} asset={selectedAsset} />
           </div>
@@ -234,11 +333,9 @@ export function TradingPage() {
         </div>
 
         {/* Center - Chart & Positions */}
-        <div className="col-span-7 flex flex-col gap-4 min-h-0">
-          {/* Asset selector */}
-          <AssetSelector />
-
-          {/* Chart - takes remaining space */}
+        <div className="flex-1 flex flex-col gap-2 min-w-0">
+          <DesktopAssetSelector />
+          
           <div className="flex-1 min-h-[300px]">
             <PriceChart
               candles={currentCandles}
@@ -250,48 +347,36 @@ export function TradingPage() {
             />
           </div>
 
-          {/* Positions - fixed height */}
-          <div className="flex-shrink-0 h-48 min-h-[192px]">
-            <PositionPanel
-              positions={positionsWithLivePnl}
-              onClosePosition={handleClosePosition}
-            />
-          </div>
+          {isAuthenticated && (
+            <div className="flex-shrink-0 h-44">
+              <PositionPanel
+                positions={positionsWithLivePnl}
+                onClosePosition={handleClosePosition}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right column - Order Form & Stats */}
-        <div className="col-span-3 flex flex-col gap-4 min-h-0 overflow-y-auto">
-          <div className="flex-shrink-0">
+        <div className="w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+          {isAuthenticated && (
             <AccountStats
               account={account}
               stats={stats}
               positions={positionsWithLivePnl}
               onReset={handleResetAccount}
             />
-          </div>
+          )}
 
-          <div className="flex-shrink-0">
-            <OrderForm
-              selectedAsset={selectedAsset}
-              currentPrice={currentPrice}
-              availableBalance={account?.availableMargin || 0}
-              onPlaceOrder={handlePlaceOrder}
-              isPlacingOrder={isPlacingOrder}
-            />
-          </div>
+          <OrderForm
+            selectedAsset={selectedAsset}
+            currentPrice={currentPrice}
+            availableBalance={account?.availableMargin || 100000}
+            onPlaceOrder={handlePlaceOrder}
+            isPlacingOrder={isPlacingOrder}
+          />
 
-          {/* Stress Test Toggle */}
-          <button
-            onClick={() => setShowStressTest(!showStressTest)}
-            className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-bg-secondary rounded-xl border border-border hover:border-accent-purple/50 transition-all duration-200"
-          >
-            <span className="text-sm font-medium text-text-primary">Stress Test</span>
-            <span className="text-xs text-text-muted">
-              {showStressTest ? 'Hide' : 'Show'}
-            </span>
-          </button>
-
-          {showStressTest && <StressTestPanel />}
+          {isAuthenticated && <OpenOrders />}
         </div>
       </div>
     </div>

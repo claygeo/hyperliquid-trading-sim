@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { createChart, type IChartApi, type ISeriesApi, type CandlestickData, type Time } from 'lightweight-charts';
+import { 
+  createChart, 
+  type IChartApi, 
+  type ISeriesApi, 
+  type CandlestickData, 
+  type HistogramData,
+  type Time 
+} from 'lightweight-charts';
 import { ChartControls } from './ChartControls';
 import { CandleTooltip } from './CandleTooltip';
-import { chartConfig, mobileChartConfig, candlestickConfig, getMinBarSpacing } from './chartConfig';
+import { chartConfig, mobileChartConfig, candlestickConfig, volumeConfig, getMinBarSpacing } from './chartConfig';
 import type { Candle } from '../../types/market';
 import { Spinner } from '../ui/Spinner';
 
@@ -22,7 +29,6 @@ const isTouchDevice = () => {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 };
 
-// Double tap detection threshold in ms
 const DOUBLE_TAP_DELAY = 300;
 
 export function PriceChart({
@@ -37,7 +43,8 @@ export function PriceChart({
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   
   const candleMapRef = useRef<Map<number, Candle>>(new Map());
   
@@ -51,7 +58,6 @@ export function PriceChart({
   const prevTimeframeRef = useRef<string>(selectedTimeframe);
   const initialLoadRef = useRef<boolean>(true);
   
-  // Touch state for gestures
   const touchStateRef = useRef<{
     isActive: boolean;
     lastTapTime: number;
@@ -78,24 +84,20 @@ export function PriceChart({
     setIsMobile(isTouchDevice());
   }, []);
 
-  // Auto-hide helper text after 4 seconds on mobile
   useEffect(() => {
     if (isMobile && showHelperText) {
-      const timer = setTimeout(() => {
-        setShowHelperText(false);
-      }, 4000);
+      const timer = setTimeout(() => setShowHelperText(false), 4000);
       return () => clearTimeout(timer);
     }
   }, [isMobile, showHelperText]);
 
-  // Reset chart zoom
   const resetChartZoom = useCallback(() => {
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
   }, []);
 
-  // Initialize chart
+  // Initialize chart with volume
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -107,20 +109,39 @@ export function PriceChart({
       height: containerRef.current.clientHeight,
     });
 
-    const series = chart.addCandlestickSeries(candlestickConfig);
+    // Add candlestick series
+    const candleSeries = chart.addCandlestickSeries({
+      ...candlestickConfig,
+      priceScaleId: 'right',
+    });
+
+    // Add volume histogram series
+    const volumeSeries = chart.addHistogramSeries({
+      ...volumeConfig,
+      priceScaleId: 'volume',
+      priceFormat: { type: 'volume' },
+    });
+
+    // Configure volume price scale
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: {
+        top: 0.85,
+        bottom: 0,
+      },
+      borderVisible: false,
+    });
 
     chartRef.current = chart;
-    seriesRef.current = series;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
     setContainerWidth(containerRef.current.clientWidth);
 
-    // Apply timeframe-specific settings
     chart.applyOptions({
       timeScale: {
         minBarSpacing: getMinBarSpacing(selectedTimeframe),
       },
     });
 
-    // Resize handler with debounce
     let resizeTimeout: ReturnType<typeof setTimeout>;
     const handleResize = () => {
       clearTimeout(resizeTimeout);
@@ -137,9 +158,8 @@ export function PriceChart({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(containerRef.current);
 
-    // Crosshair move for tooltip
     chart.subscribeCrosshairMove((param) => {
-      if (!param.point || !param.time || !seriesRef.current) {
+      if (!param.point || !param.time || !candleSeriesRef.current) {
         setHoveredCandle(null);
         return;
       }
@@ -150,7 +170,7 @@ export function PriceChart({
       }
 
       const timeKey = param.time as number;
-      const data = param.seriesData.get(seriesRef.current) as CandlestickData;
+      const data = param.seriesData.get(candleSeriesRef.current) as CandlestickData;
       
       if (data) {
         const fullCandle = candleMapRef.current.get(timeKey);
@@ -167,14 +187,12 @@ export function PriceChart({
       }
     });
 
-    // Touch event handlers
     const chartElement = containerRef.current;
     
     const handleTouchStart = (e: TouchEvent) => {
       touchStateRef.current.isActive = true;
       setHoveredCandle(null);
       
-      // Only track single touch for double-tap
       if (e.touches.length === 1) {
         const now = Date.now();
         const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
@@ -190,18 +208,15 @@ export function PriceChart({
     };
     
     const handleTouchEnd = (e: TouchEvent) => {
-      // Check for double tap on touch end
       if (e.touches.length === 0) {
         const now = Date.now();
         const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
         
-        // If this was a quick tap and we have 2 taps, it's a double tap
         if (touchStateRef.current.tapCount >= 2 && timeSinceLastTap < DOUBLE_TAP_DELAY) {
           resetChartZoom();
           touchStateRef.current.tapCount = 0;
         }
         
-        // Small delay before allowing tooltip again
         setTimeout(() => {
           touchStateRef.current.isActive = false;
         }, 100);
@@ -209,7 +224,6 @@ export function PriceChart({
     };
     
     const handleTouchMove = () => {
-      // Reset tap count on move (it's a drag, not a tap)
       touchStateRef.current.tapCount = 0;
       setHoveredCandle(null);
     };
@@ -228,7 +242,6 @@ export function PriceChart({
     };
   }, [isMobile, resetChartZoom]);
 
-  // Update minBarSpacing when timeframe changes
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current.applyOptions({
@@ -239,11 +252,11 @@ export function PriceChart({
     }
   }, [selectedTimeframe]);
 
-  // Update chart data
+  // Update chart data with volume
   useEffect(() => {
-    if (!seriesRef.current || sortedCandles.length === 0) return;
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || sortedCandles.length === 0) return;
 
-    const chartData: CandlestickData[] = sortedCandles.map((c) => ({
+    const candleData: CandlestickData[] = sortedCandles.map((c) => ({
       time: Math.floor(c.time / 1000) as Time,
       open: c.open,
       high: c.high,
@@ -251,7 +264,14 @@ export function PriceChart({
       close: c.close,
     }));
 
-    seriesRef.current.setData(chartData);
+    const volumeData: HistogramData[] = sortedCandles.map((c) => ({
+      time: Math.floor(c.time / 1000) as Time,
+      value: c.volume,
+      color: c.close >= c.open ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 51, 102, 0.3)',
+    }));
+
+    candleSeriesRef.current.setData(candleData);
+    volumeSeriesRef.current.setData(volumeData);
 
     const assetChanged = prevAssetRef.current !== selectedAsset;
     const timeframeChanged = prevTimeframeRef.current !== selectedTimeframe;
@@ -269,21 +289,25 @@ export function PriceChart({
 
   // Update last candle with live price
   const updateLivePrice = useCallback(() => {
-    if (!seriesRef.current || sortedCandles.length === 0 || !currentPrice || currentPrice <= 0) return;
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || sortedCandles.length === 0 || !currentPrice || currentPrice <= 0) return;
 
     const lastCandle = sortedCandles[sortedCandles.length - 1];
     
     const priceDiff = Math.abs(currentPrice - lastCandle.close) / lastCandle.close;
-    if (priceDiff > 0.2) {
-      return;
-    }
+    if (priceDiff > 0.2) return;
     
-    seriesRef.current.update({
+    candleSeriesRef.current.update({
       time: Math.floor(lastCandle.time / 1000) as Time,
       open: lastCandle.open,
       high: Math.max(lastCandle.high, currentPrice),
       low: Math.min(lastCandle.low, currentPrice),
       close: currentPrice,
+    });
+
+    volumeSeriesRef.current.update({
+      time: Math.floor(lastCandle.time / 1000) as Time,
+      value: lastCandle.volume,
+      color: currentPrice >= lastCandle.open ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 51, 102, 0.3)',
     });
   }, [sortedCandles, currentPrice]);
 
@@ -299,34 +323,26 @@ export function PriceChart({
     ? (displayPrice >= sortedCandles[sortedCandles.length - 1]?.open ? 'text-accent-green' : 'text-accent-red')
     : 'text-text-primary';
 
-  // Desktop double-click handler
   const handleDoubleClick = useCallback(() => {
     resetChartZoom();
   }, [resetChartZoom]);
 
   return (
     <div 
-      className="relative h-full w-full bg-bg-secondary rounded-xl border border-border overflow-hidden"
+      className="relative h-full w-full bg-bg-primary rounded-xl border border-border overflow-hidden"
       onDoubleClick={handleDoubleClick}
     >
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-bg-secondary/90 backdrop-blur-sm border-b border-border">
+      <div className="absolute top-0 left-0 right-0 z-10 bg-bg-primary/95 backdrop-blur-sm border-b border-border">
         <div className="flex items-center justify-between px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
-            <h2 className="text-base md:text-lg font-semibold font-display truncate">
-              {selectedAsset}/USD
+            <h2 className="text-base md:text-lg font-semibold font-mono truncate">
+              {selectedAsset}-PERP
             </h2>
             {displayPrice > 0 && (
-              <div className="flex items-center gap-1 md:gap-2">
-                <span className={`text-lg md:text-xl font-mono font-bold tabular-nums ${priceColor}`}>
-                  ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                {isLoading && (
-                  <div className="w-4 h-4">
-                    <Spinner size="sm" />
-                  </div>
-                )}
-              </div>
+              <span className={`text-lg md:text-xl font-mono font-bold tabular-nums ${priceColor}`}>
+                ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             )}
           </div>
           <div className="hidden md:block">
@@ -341,32 +357,30 @@ export function PriceChart({
           </div>
         </div>
         <div className="md:hidden px-3 pb-2">
-          <div className="flex items-center justify-between gap-2">
-            <ChartControls
-              selectedTimeframe={selectedTimeframe}
-              onTimeframeChange={onTimeframeChange}
-              selectedAsset={selectedAsset}
-              onAssetChange={onAssetChange}
-              isLoading={isLoading}
-              showAssetSelector={showAssetSelector}
-            />
-          </div>
+          <ChartControls
+            selectedTimeframe={selectedTimeframe}
+            onTimeframeChange={onTimeframeChange}
+            selectedAsset={selectedAsset}
+            onAssetChange={onAssetChange}
+            isLoading={isLoading}
+            showAssetSelector={showAssetSelector}
+          />
         </div>
       </div>
 
       {/* Chart container */}
       <div 
         ref={containerRef} 
-        className="h-full w-full pt-[80px] md:pt-14 touch-manipulation"
+        className="h-full w-full pt-[76px] md:pt-14 touch-manipulation"
         style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
       />
 
       {/* Loading overlay */}
       {isLoading && sortedCandles.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bg-secondary/80 backdrop-blur-sm z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm z-20">
           <div className="flex flex-col items-center gap-3">
             <Spinner size="lg" />
-            <span className="text-sm text-text-muted">Loading chart data...</span>
+            <span className="text-sm text-text-muted">Loading chart...</span>
           </div>
         </div>
       )}
@@ -381,10 +395,10 @@ export function PriceChart({
         />
       )}
 
-      {/* Mobile helper text - auto hides after 4 seconds */}
+      {/* Mobile helper text */}
       {isMobile && showHelperText && sortedCandles.length > 0 && !isLoading && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-bg-secondary/80 px-3 py-1 rounded-full backdrop-blur-sm transition-opacity duration-500">
-          Pinch to zoom • Double-tap to reset
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-bg-primary/80 px-3 py-1 rounded-full backdrop-blur-sm">
+          Pinch to zoom - Double-tap to reset
         </div>
       )}
     </div>

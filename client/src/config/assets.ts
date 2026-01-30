@@ -1,45 +1,41 @@
 export interface Asset {
   symbol: string;
   name: string;
-  decimals: number;
-  priceDecimals: number;
-  icon: string;
-  hyperliquidSymbol: string;
-  defaultTimeframe: string;
+  szDecimals: number;
+  maxLeverage: number;
 }
 
-export const ASSETS: Record<string, Asset> = {
-  BTC: {
-    symbol: 'BTC',
-    name: 'Bitcoin',
-    decimals: 8,
-    priceDecimals: 2,
-    icon: '₿',
-    hyperliquidSymbol: 'BTC',
-    defaultTimeframe: '1h',
-  },
-  ETH: {
-    symbol: 'ETH',
-    name: 'Ethereum',
-    decimals: 8,
-    priceDecimals: 2,
-    icon: 'Ξ',
-    hyperliquidSymbol: 'ETH',
-    defaultTimeframe: '1h',
-  },
-  SOL: {
-    symbol: 'SOL',
-    name: 'Solana',
-    decimals: 8,
-    priceDecimals: 4,
-    icon: '◎',
-    hyperliquidSymbol: 'SOL',
-    defaultTimeframe: '15m',
-  },
-} as const;
+// Default assets for initial render before API fetch
+export const DEFAULT_ASSETS: Asset[] = [
+  { symbol: 'BTC', name: 'Bitcoin', szDecimals: 5, maxLeverage: 50 },
+  { symbol: 'ETH', name: 'Ethereum', szDecimals: 4, maxLeverage: 50 },
+  { symbol: 'SOL', name: 'Solana', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'DOGE', name: 'Dogecoin', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'AVAX', name: 'Avalanche', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'LINK', name: 'Chainlink', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'ARB', name: 'Arbitrum', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'OP', name: 'Optimism', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'SUI', name: 'Sui', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'PEPE', name: 'Pepe', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'WIF', name: 'dogwifhat', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'MATIC', name: 'Polygon', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'INJ', name: 'Injective', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'APT', name: 'Aptos', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'NEAR', name: 'NEAR', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'FTM', name: 'Fantom', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'ATOM', name: 'Cosmos', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'TIA', name: 'Celestia', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'SEI', name: 'Sei', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'RUNE', name: 'THORChain', szDecimals: 1, maxLeverage: 50 },
+];
 
-export const ASSET_LIST = Object.values(ASSETS);
-export const ASSET_SYMBOLS = Object.keys(ASSETS) as Array<keyof typeof ASSETS>;
+// For backward compatibility - will be replaced with dynamic list
+export const ASSETS: Record<string, Asset> = Object.fromEntries(
+  DEFAULT_ASSETS.map(a => [a.symbol, a])
+);
+
+export const ASSET_LIST = DEFAULT_ASSETS;
+export const ASSET_SYMBOLS = DEFAULT_ASSETS.map(a => a.symbol);
 
 export const TIMEFRAMES = [
   { value: '1m', label: '1m', seconds: 60 },
@@ -51,3 +47,12 @@ export const TIMEFRAMES = [
 ] as const;
 
 export type TimeframeValue = typeof TIMEFRAMES[number]['value'];
+
+// Helper to get price decimals based on price
+export function getPriceDecimals(price: number): number {
+  if (price >= 1000) return 2;
+  if (price >= 1) return 2;
+  if (price >= 0.01) return 4;
+  if (price >= 0.0001) return 6;
+  return 8;
+}

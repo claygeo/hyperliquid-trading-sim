@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validateQuery } from '../middleware/validation.middleware.js';
-import { isValidAsset } from '../config/assets.js';
+import { isValidAsset, fetchAssetsFromHyperliquid } from '../config/assets.js';
 import { logger } from '../lib/logger.js';
 import type { Candle } from '../types/market.js';
 
@@ -31,19 +31,16 @@ const TIMEFRAME_MAP: Record<string, string> = {
 const candleCache = new Map<string, { candles: Candle[]; timestamp: number }>();
 const CACHE_TTL = 10000; // 10 seconds
 
+// Price cache for fallbacks
+const priceCache = new Map<string, { price: number; timestamp: number }>();
+const PRICE_CACHE_TTL = 30000; // 30 seconds
+
 // Generate fallback candles when API fails
 function generateFallbackCandles(
-  asset: string,
+  basePrice: number,
   timeframe: string,
   limit: number
 ): Candle[] {
-  const basePrices: Record<string, number> = {
-    BTC: 87500,
-    ETH: 2900,
-    SOL: 120,
-  };
-
-  const basePrice = basePrices[asset] || 100;
   const candles: Candle[] = [];
   const now = Date.now();
   
@@ -68,13 +65,57 @@ function generateFallbackCandles(
     const close = open + change;
     const high = Math.max(open, close) + Math.random() * volatility * 0.5;
     const low = Math.min(open, close) - Math.random() * volatility * 0.5;
-    const volume = Math.random() * 1000 + 100;
+    const volume = Math.random() * 1000000 + 10000;
 
     candles.push({ time, open, high, low, close, volume });
     price = close;
   }
 
   return candles;
+}
+
+// Fetch current price from Hyperliquid
+async function fetchPrice(asset: string): Promise<number> {
+  // Check cache first
+  const cached = priceCache.get(asset);
+  if (cached && Date.now() - cached.timestamp < PRICE_CACHE_TTL) {
+    return cached.price;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'allMids' }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Hyperliquid API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const price = parseFloat(data[asset]);
+    
+    if (isNaN(price)) {
+      throw new Error(`Price not found for ${asset}`);
+    }
+
+    // Cache the price
+    priceCache.set(asset, { price, timestamp: Date.now() });
+    return price;
+  } catch (error) {
+    // Return cached price even if stale
+    if (cached) {
+      return cached.price;
+    }
+    throw error;
+  }
 }
 
 // Fetch candles from Hyperliquid REST API with caching and fallback
@@ -107,7 +148,7 @@ async function fetchHyperliquidCandles(
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch('https://api.hyperliquid.xyz/info', {
       method: 'POST',
@@ -153,56 +194,40 @@ async function fetchHyperliquidCandles(
 
     return candles.slice(-limit);
   } catch (error) {
-    logger.warn(`Failed to fetch Hyperliquid candles for ${asset}, using fallback:`, error);
+    logger.warn(`Failed to fetch Hyperliquid candles for ${asset}:`, error);
     
-    // Return cached even if stale, or generate fallback
+    // Return cached even if stale
     if (cached) {
       return cached.candles.slice(-limit);
     }
     
-    return generateFallbackCandles(asset, timeframe, limit);
+    // Try to get a reasonable base price for fallback
+    let basePrice = 100;
+    try {
+      basePrice = await fetchPrice(asset);
+    } catch {
+      // Use rough estimates
+      const estimates: Record<string, number> = {
+        BTC: 95000, ETH: 3300, SOL: 180, DOGE: 0.35, AVAX: 35,
+        LINK: 22, ARB: 1.2, OP: 2.5, SUI: 4.5, PEPE: 0.000015,
+      };
+      basePrice = estimates[asset] || 100;
+    }
+    
+    return generateFallbackCandles(basePrice, timeframe, limit);
   }
 }
 
-// Get current price from Hyperliquid with fallback
-async function fetchHyperliquidPrice(asset: string): Promise<number> {
+// Get available assets
+marketRoutes.get('/assets', async (_req, res) => {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
-
-    const response = await fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'allMids' }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Hyperliquid API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const price = parseFloat(data[asset]);
-    
-    if (isNaN(price)) {
-      throw new Error(`Price not found for ${asset}`);
-    }
-
-    return price;
+    const assets = await fetchAssetsFromHyperliquid();
+    res.json(assets);
   } catch (error) {
-    logger.warn(`Failed to fetch Hyperliquid price for ${asset}, using fallback`);
-    
-    // Fallback prices
-    const fallbackPrices: Record<string, number> = {
-      BTC: 87500,
-      ETH: 2900,
-      SOL: 120,
-    };
-    return fallbackPrices[asset] || 100;
+    logger.error('Get assets error:', error);
+    res.status(500).json({ error: 'Failed to fetch assets' });
   }
-}
+});
 
 // Get historical candles
 marketRoutes.get('/candles', validateQuery(candlesQuerySchema), async (req, res) => {
@@ -213,8 +238,13 @@ marketRoutes.get('/candles', validateQuery(candlesQuerySchema), async (req, res)
       limit: string;
     };
 
+    // Validate asset exists (will check against Hyperliquid's asset list)
     if (!isValidAsset(asset)) {
-      return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      // Try fetching fresh assets list in case it's a new asset
+      await fetchAssetsFromHyperliquid();
+      if (!isValidAsset(asset)) {
+        return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      }
     }
 
     const candles = await fetchHyperliquidCandles(asset, timeframe, parseInt(limit));
@@ -231,10 +261,13 @@ marketRoutes.get('/price', validateQuery(priceQuerySchema), async (req, res) => 
     const { asset } = req.query as { asset: string };
 
     if (!isValidAsset(asset)) {
-      return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      await fetchAssetsFromHyperliquid();
+      if (!isValidAsset(asset)) {
+        return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      }
     }
 
-    const price = await fetchHyperliquidPrice(asset);
+    const price = await fetchPrice(asset);
     res.json({ price });
   } catch (error) {
     logger.error('Get price error:', error);
@@ -248,10 +281,13 @@ marketRoutes.get('/data', validateQuery(priceQuerySchema), async (req, res) => {
     const { asset } = req.query as { asset: string };
 
     if (!isValidAsset(asset)) {
-      return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      await fetchAssetsFromHyperliquid();
+      if (!isValidAsset(asset)) {
+        return res.status(400).json({ error: `Invalid asset: ${asset}` });
+      }
     }
 
-    const price = await fetchHyperliquidPrice(asset);
+    const price = await fetchPrice(asset);
     const change24h = price * (Math.random() * 0.06 - 0.03);
 
     res.json({

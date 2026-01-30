@@ -2,38 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+/* Custom scrollbar - dark */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #12121a;
+  background: #0b0b0f;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a3a;
-  border-radius: 4px;
+  background: #2b3139;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3a4a;
+  background: #3a3f47;
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2a3a #12121a;
+  scrollbar-color: #2b3139 #0b0b0f;
 }
 
 /* Base styles */
 html {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif;
 }
 
 body {
-  @apply bg-bg-primary text-text-primary antialiased;
+  @apply bg-black text-text-primary antialiased;
 }
 
 /* Remove number input arrows */
@@ -53,7 +53,7 @@ input[type='number'] {
 }
 
 *:focus-visible {
-  @apply ring-2 ring-accent-cyan ring-offset-2 ring-offset-bg-primary;
+  @apply ring-1 ring-accent-cyan ring-offset-1 ring-offset-black;
 }
 
 /* Selection */
@@ -71,43 +71,30 @@ input[type='number'] {
 /* Custom utilities */
 @layer utilities {
   .text-glow {
-    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+    text-shadow: 0 0 10px currentColor;
   }
 
   .box-glow {
-    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
   }
 
   .box-glow-green {
-    box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+    box-shadow: 0 0 15px rgba(14, 203, 129, 0.2);
   }
 
   .box-glow-red {
-    box-shadow: 0 0 15px rgba(255, 51, 102, 0.3);
-  }
-
-  .gradient-text {
-    @apply bg-gradient-to-r from-accent-cyan to-accent-purple bg-clip-text text-transparent;
+    box-shadow: 0 0 15px rgba(246, 70, 93, 0.2);
   }
 }
 
 /* Animations */
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -125,14 +112,8 @@ input[type='number'] {
 
 /* Fade in animation */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fadeIn {
@@ -141,14 +122,8 @@ input[type='number'] {
 
 /* Scale in animation */
 @keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .animate-scaleIn {
@@ -165,21 +140,13 @@ input[type='number'] {
 }
 
 @keyframes priceFlashGreen {
-  0% {
-    background-color: rgba(0, 255, 136, 0.3);
-  }
-  100% {
-    background-color: transparent;
-  }
+  0% { background-color: rgba(14, 203, 129, 0.3); }
+  100% { background-color: transparent; }
 }
 
 @keyframes priceFlashRed {
-  0% {
-    background-color: rgba(255, 51, 102, 0.3);
-  }
-  100% {
-    background-color: transparent;
-  }
+  0% { background-color: rgba(246, 70, 93, 0.3); }
+  100% { background-color: transparent; }
 }
 
 /* Trading chart container */
@@ -211,40 +178,13 @@ input[type='number'] {
 }
 
 @keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 @keyframes slideOut {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-  .trading-layout {
-    @apply flex-col;
-  }
-  
-  .orderbook-container {
-    @apply h-64;
-  }
-  
-  .chart-container {
-    @apply h-80;
-  }
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
 }
 
 /* Safe area for iPhone notch/home indicator */
@@ -263,18 +203,11 @@ html, body {
 
 /* Mobile touch improvements */
 @media (hover: none) and (pointer: coarse) {
-  /* Larger tap targets on mobile */
   button, a, [role="button"] {
     min-height: 44px;
     min-width: 44px;
   }
   
-  /* Disable hover states on touch devices */
-  .hover\:bg-bg-tertiary:hover {
-    background-color: transparent;
-  }
-  
-  /* Active state instead */
   button:active, a:active, [role="button"]:active {
     opacity: 0.7;
   }
@@ -285,4 +218,42 @@ html, body {
   input, select, textarea {
     font-size: 16px !important;
   }
+}
+
+/* Range input styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-track {
+  background: #1e2026;
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00d4ff;
+  margin-top: -5px;
+}
+
+input[type="range"]::-moz-range-track {
+  background: #1e2026;
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00d4ff;
+  border: none;
 }

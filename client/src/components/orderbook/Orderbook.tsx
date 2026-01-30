@@ -8,12 +8,13 @@ interface OrderbookProps {
   orderbook: OrderbookType | null;
   asset: string;
   isLoading?: boolean;
+  compact?: boolean;
 }
 
-export function Orderbook({ orderbook, asset, isLoading }: OrderbookProps) {
+export function Orderbook({ orderbook, asset, isLoading, compact = false }: OrderbookProps) {
   if (isLoading || !orderbook) {
     return (
-      <div className="h-full bg-bg-secondary rounded-xl border border-border p-4 flex items-center justify-center">
+      <div className="h-full bg-bg-primary rounded-xl border border-border p-4 flex items-center justify-center">
         <Spinner />
       </div>
     );
@@ -22,17 +23,16 @@ export function Orderbook({ orderbook, asset, isLoading }: OrderbookProps) {
   const maxTotal = getMaxTotal(orderbook.bids, orderbook.asks);
 
   return (
-    <div className="h-full bg-bg-secondary rounded-xl border border-border flex flex-col">
+    <div className="h-full bg-bg-primary rounded-xl border border-border flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-semibold text-text-primary">Order Book</h3>
+      <div className={compact ? "px-2 py-2 border-b border-border" : "px-4 py-3 border-b border-border"}>
+        <h3 className={compact ? "text-xs font-semibold text-text-primary" : "text-sm font-semibold text-text-primary"}>Order Book</h3>
       </div>
 
       {/* Column headers */}
-      <div className="grid grid-cols-3 gap-2 px-4 py-2 text-xs text-text-muted border-b border-border">
-        <span>Price (USD)</span>
-        <span className="text-right">Size ({asset})</span>
-        <span className="text-right">Total</span>
+      <div className={`grid grid-cols-2 gap-1 ${compact ? 'px-2 py-1' : 'px-4 py-2'} text-xs text-text-muted border-b border-border`}>
+        <span>Price</span>
+        <span className="text-right">Size</span>
       </div>
 
       {/* Asks (sells) - reversed so lowest ask is at bottom */}

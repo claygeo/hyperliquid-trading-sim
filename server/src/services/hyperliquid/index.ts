@@ -1,11 +1,15 @@
 import WebSocket from 'ws';
 import { config } from '../../config/index.js';
-import { SUPPORTED_ASSETS, getAssetConfig } from '../../config/assets.js';
+import { getSupportedAssets, getAssetConfig, initializeAssets } from '../../config/assets.js';
 import { logger } from '../../lib/logger.js';
 import type { WebSocketServer } from '../../websocket/index.js';
 import type { Candle, Orderbook, OrderbookLevel, Trade } from '../../types/market.js';
 import type { HLCandle, HLOrderbook, HLTrade, HLAllMids } from '../../types/hyperliquid.js';
 import { v4 as uuidv4 } from 'uuid';
+
+// Top assets to subscribe to for orderbook/trades (to avoid overwhelming the connection)
+const TOP_ASSETS = ['BTC', 'ETH', 'SOL', 'DOGE', 'AVAX', 'LINK', 'ARB', 'OP', 'SUI', 'PEPE', 
+                   'WIF', 'MATIC', 'INJ', 'APT', 'NEAR', 'FTM', 'ATOM', 'TIA', 'SEI', 'RUNE'];
 
 export class HyperliquidService {
   private ws: WebSocket | null = null;
@@ -16,12 +20,16 @@ export class HyperliquidService {
   private prices: Map<string, number> = new Map();
   private candles: Map<string, Candle[]> = new Map();
   private orderbooks: Map<string, Orderbook> = new Map();
+  private subscribedAssets: Set<string> = new Set();
 
   constructor(wss: WebSocketServer) {
     this.wss = wss;
   }
 
   async connect(): Promise<void> {
+    // Initialize assets first
+    await initializeAssets();
+    
     return new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket(config.hyperliquid.wsUrl);
@@ -76,34 +84,46 @@ export class HyperliquidService {
     return this.candles.get(`${asset}-${timeframe}`) || [];
   }
 
+  // Subscribe to a specific asset on demand
+  subscribeToAsset(asset: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (this.subscribedAssets.has(asset)) return;
+
+    this.subscribedAssets.add(asset);
+
+    // L2 orderbook
+    this.ws.send(JSON.stringify({
+      method: 'subscribe',
+      subscription: { type: 'l2Book', coin: asset },
+    }));
+
+    // Trades
+    this.ws.send(JSON.stringify({
+      method: 'subscribe',
+      subscription: { type: 'trades', coin: asset },
+    }));
+
+    // Candles (1m default)
+    this.ws.send(JSON.stringify({
+      method: 'subscribe',
+      subscription: { type: 'candle', coin: asset, interval: '1m' },
+    }));
+
+    logger.info(`Subscribed to ${asset}`);
+  }
+
   private subscribeToMarkets() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-    // Subscribe to all mids (prices)
+    // Subscribe to all mids (prices) - this gives us all prices
     this.ws.send(JSON.stringify({
       method: 'subscribe',
       subscription: { type: 'allMids' },
     }));
 
-    // Subscribe to orderbook and trades for each asset
-    for (const asset of SUPPORTED_ASSETS) {
-      // L2 orderbook
-      this.ws.send(JSON.stringify({
-        method: 'subscribe',
-        subscription: { type: 'l2Book', coin: asset },
-      }));
-
-      // Trades
-      this.ws.send(JSON.stringify({
-        method: 'subscribe',
-        subscription: { type: 'trades', coin: asset },
-      }));
-
-      // Candles (1m default)
-      this.ws.send(JSON.stringify({
-        method: 'subscribe',
-        subscription: { type: 'candle', coin: asset, interval: '1m' },
-      }));
+    // Subscribe to orderbook, trades, and candles for top assets
+    for (const asset of TOP_ASSETS) {
+      this.subscribeToAsset(asset);
     }
   }
 
@@ -126,9 +146,10 @@ export class HyperliquidService {
   }
 
   private handleAllMids(data: HLAllMids) {
-    for (const [coin, price] of Object.entries(data.mids || data)) {
-      if (SUPPORTED_ASSETS.includes(coin)) {
-        const priceNum = parseFloat(price);
+    const mids = data.mids || data;
+    for (const [coin, price] of Object.entries(mids)) {
+      const priceNum = parseFloat(price as string);
+      if (!isNaN(priceNum)) {
         this.prices.set(coin, priceNum);
         
         // Broadcast price update
@@ -143,10 +164,8 @@ export class HyperliquidService {
 
   private handleOrderbook(data: HLOrderbook) {
     const { coin, levels, time } = data;
-    if (!SUPPORTED_ASSETS.includes(coin)) return;
 
     const [hlBids, hlAsks] = levels;
-    const config = getAssetConfig(coin);
     
     let bidTotal = 0;
     const bids: OrderbookLevel[] = hlBids.slice(0, 10).map((level) => {
@@ -205,7 +224,6 @@ export class HyperliquidService {
 
     for (const hlTrade of data) {
       const { coin, side, px, sz, time, hash } = hlTrade;
-      if (!SUPPORTED_ASSETS.includes(coin)) continue;
 
       const trade: Trade = {
         id: hash || uuidv4(),
@@ -226,7 +244,6 @@ export class HyperliquidService {
 
   private handleCandle(data: HLCandle) {
     const { s: coin, t: time, o, h, l, c, v } = data;
-    if (!SUPPORTED_ASSETS.includes(coin)) return;
 
     const candle: Candle = {
       time: time,
