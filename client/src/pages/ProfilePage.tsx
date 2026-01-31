@@ -3,7 +3,6 @@ import { useAuthStore } from '../hooks/useAuth';
 import { useAccountStore } from '../hooks/useAccount';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { MobileNav } from '../components/ui/MobileNav';
 import { formatUSD, formatPercent, formatDate } from '../lib/utils';
 import { Spinner } from '../components/ui/Spinner';
 
@@ -195,8 +194,6 @@ export function ProfilePage() {
           </Button>
         </div>
       </Modal>
-
-      <MobileNav />
     </div>
   );
 }

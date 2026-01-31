@@ -6,6 +6,7 @@ import { HyperliquidService } from './services/hyperliquid/index.js';
 import { StressTestService } from './services/stress-test/index.js';
 import { setHyperliquidService } from './routes/trading.routes.js';
 import { setStressTestService } from './routes/stressTest.routes.js';
+import { setMarketHyperliquidService } from './routes/market.routes.js';
 import { logger } from './lib/logger.js';
 import { config } from './config/index.js';
 
@@ -26,6 +27,7 @@ async function main() {
   
   // Inject services into routes
   setHyperliquidService(hyperliquid);
+  setMarketHyperliquidService(hyperliquid);
   setStressTestService(stressTest);
 
   // Connect to Hyperliquid

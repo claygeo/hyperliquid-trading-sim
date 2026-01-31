@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useLeaderboardStore } from '../hooks/useLeaderboard';
 import { Leaderboard } from '../components/leaderboard/Leaderboard';
 import { LeaderboardTabs } from '../components/leaderboard/LeaderboardTabs';
-import { MobileNav } from '../components/ui/MobileNav';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 
@@ -74,8 +73,6 @@ export function LeaderboardPage() {
           )}
         </div>
       </div>
-
-      <MobileNav />
     </div>
   );
 }
