@@ -156,10 +156,10 @@ export function PriceChart({
       priceFormat: { type: 'volume' },
     });
 
-    // Configure volume price scale - smaller volume bars on mobile
+    // Configure volume price scale - visible volume bars
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: compact ? 0.92 : 0.85,
+        top: compact ? 0.80 : 0.75, // More room for volume
         bottom: 0,
       },
       borderVisible: false,
@@ -363,30 +363,55 @@ export function PriceChart({
     resetChartZoom();
   }, [resetChartZoom]);
 
-  // Compact header for mobile - minimal height
-  const headerPadding = compact ? 'px-2 py-0.5' : 'px-3 md:px-4 py-2 md:py-3';
-  const headerHeight = compact ? 'pt-[40px]' : 'pt-[76px] md:pt-14';
+  // Compact header for mobile - just timeframes
+  const headerPadding = compact ? 'px-2 py-1' : 'px-3 md:px-4 py-2 md:py-3';
+  const headerHeight = compact ? 'pt-[28px]' : 'pt-[76px] md:pt-14';
 
   return (
     <div 
-      className="relative h-full w-full bg-bg-primary rounded-xl border border-border overflow-hidden"
+      className="relative h-full w-full bg-[#0d0f11] rounded-lg border border-border overflow-hidden"
       onDoubleClick={handleDoubleClick}
     >
-      {/* Header - smaller on compact mode */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-bg-primary/95 backdrop-blur-sm border-b border-border">
-        <div className={`flex items-center justify-between ${headerPadding}`}>
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className={compact ? "text-sm font-semibold font-mono" : "text-base md:text-lg font-semibold font-mono"}>
-              {selectedAsset}-PERP
-            </h2>
-            {displayPrice > 0 && (
-              <span className={`${compact ? 'text-base' : 'text-lg md:text-xl'} font-mono font-bold tabular-nums ${priceColor}`}>
-                ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            )}
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-[#0d0f11]/95 backdrop-blur-sm border-b border-border">
+        {compact ? (
+          /* Compact: just timeframe buttons, minimal */
+          <div className="px-2 py-1 flex items-center gap-1">
+            <ChartControls
+              selectedTimeframe={selectedTimeframe}
+              onTimeframeChange={onTimeframeChange}
+              selectedAsset={selectedAsset}
+              onAssetChange={onAssetChange}
+              isLoading={isLoading}
+              showAssetSelector={showAssetSelector}
+              compact
+            />
           </div>
-          {!compact && (
-            <div className="hidden md:block">
+        ) : (
+          <>
+            <div className={`flex items-center justify-between ${headerPadding}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base md:text-lg font-semibold font-mono">
+                  {selectedAsset}-PERP
+                </h2>
+                {displayPrice > 0 && (
+                  <span className={`text-lg md:text-xl font-mono font-bold tabular-nums ${priceColor}`}>
+                    ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+              <div className="hidden md:block">
+                <ChartControls
+                  selectedTimeframe={selectedTimeframe}
+                  onTimeframeChange={onTimeframeChange}
+                  selectedAsset={selectedAsset}
+                  onAssetChange={onAssetChange}
+                  isLoading={isLoading}
+                  showAssetSelector={showAssetSelector}
+                />
+              </div>
+            </div>
+            <div className="md:hidden px-3 pb-2">
               <ChartControls
                 selectedTimeframe={selectedTimeframe}
                 onTimeframeChange={onTimeframeChange}
@@ -396,20 +421,8 @@ export function PriceChart({
                 showAssetSelector={showAssetSelector}
               />
             </div>
-          )}
-        </div>
-        {/* Timeframe controls - inline for compact */}
-        <div className={compact ? 'px-2 pb-1.5' : 'md:hidden px-3 pb-2'}>
-          <ChartControls
-            selectedTimeframe={selectedTimeframe}
-            onTimeframeChange={onTimeframeChange}
-            selectedAsset={selectedAsset}
-            onAssetChange={onAssetChange}
-            isLoading={isLoading}
-            showAssetSelector={showAssetSelector}
-            compact={compact}
-          />
-        </div>
+          </>
+        )}
       </div>
 
       {/* Chart container */}

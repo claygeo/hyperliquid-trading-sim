@@ -60,14 +60,14 @@ export async function fetchAssetsFromHyperliquid(): Promise<AssetConfig[]> {
       throw new Error(`Hyperliquid API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data: { universe?: Array<{ name: string; szDecimals?: number; maxLeverage?: number }> } = await response.json();
     
     if (!data.universe || !Array.isArray(data.universe)) {
       throw new Error('Invalid response from Hyperliquid meta API');
     }
 
     // Map the universe to our asset format
-    const assets: AssetConfig[] = data.universe.map((asset: any) => ({
+    const assets: AssetConfig[] = data.universe.map((asset) => ({
       symbol: asset.name,
       name: asset.name, // Hyperliquid doesn't provide full names
       szDecimals: asset.szDecimals || 2,
