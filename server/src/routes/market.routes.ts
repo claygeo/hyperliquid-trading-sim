@@ -27,13 +27,37 @@ const TIMEFRAME_MAP: Record<string, string> = {
   '1d': '1d',
 };
 
-// Cache for candles to avoid rate limiting
-const candleCache = new Map<string, { candles: Candle[]; timestamp: number }>();
-const CACHE_TTL = 10000; // 10 seconds
+// Cache TTL based on timeframe (longer for larger timeframes)
+const CACHE_TTL_MAP: Record<string, number> = {
+  '1m': 30 * 1000,    // 30 seconds
+  '5m': 60 * 1000,    // 1 minute
+  '15m': 2 * 60 * 1000, // 2 minutes
+  '1h': 3 * 60 * 1000,  // 3 minutes
+  '4h': 5 * 60 * 1000,  // 5 minutes
+  '1d': 10 * 60 * 1000, // 10 minutes
+};
 
-// Price cache for fallbacks
+// Cache for candles
+const candleCache = new Map<string, { candles: Candle[]; timestamp: number }>();
+
+// Price cache
 const priceCache = new Map<string, { price: number; timestamp: number }>();
-const PRICE_CACHE_TTL = 30000; // 30 seconds
+const PRICE_CACHE_TTL = 60 * 1000; // 1 minute
+
+// Rate limit tracking
+let rateLimitedUntil = 0;
+const RATE_LIMIT_BACKOFF = 30 * 1000; // 30 seconds backoff when rate limited
+
+// Check if we're rate limited
+function isRateLimited(): boolean {
+  return Date.now() < rateLimitedUntil;
+}
+
+// Set rate limit backoff
+function setRateLimited(): void {
+  rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF;
+  logger.warn(`Rate limited - backing off for ${RATE_LIMIT_BACKOFF / 1000}s`);
+}
 
 // Generate fallback candles when API fails
 function generateFallbackCandles(
@@ -82,6 +106,16 @@ async function fetchPrice(asset: string): Promise<number> {
     return cached.price;
   }
 
+  // If rate limited, return cached or estimate
+  if (isRateLimited()) {
+    if (cached) return cached.price;
+    const estimates: Record<string, number> = {
+      BTC: 95000, ETH: 3300, SOL: 180, DOGE: 0.35, AVAX: 35,
+      LINK: 22, ARB: 1.2, OP: 2.5, SUI: 4.5, PEPE: 0.000015,
+    };
+    return estimates[asset] || 100;
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -94,6 +128,12 @@ async function fetchPrice(asset: string): Promise<number> {
     });
 
     clearTimeout(timeoutId);
+
+    if (response.status === 429) {
+      setRateLimited();
+      if (cached) return cached.price;
+      throw new Error('Rate limited');
+    }
 
     if (!response.ok) {
       throw new Error(`Hyperliquid API error: ${response.status}`);
@@ -126,10 +166,31 @@ async function fetchHyperliquidCandles(
 ): Promise<Candle[]> {
   const cacheKey = `${asset}-${timeframe}`;
   const cached = candleCache.get(cacheKey);
+  const cacheTTL = CACHE_TTL_MAP[timeframe] || CACHE_TTL_MAP['1h'];
   
   // Return cached if fresh
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  if (cached && Date.now() - cached.timestamp < cacheTTL) {
     return cached.candles.slice(-limit);
+  }
+
+  // If rate limited, return cached or generate fallback
+  if (isRateLimited()) {
+    logger.info(`Rate limited - returning cached/fallback for ${asset}`);
+    if (cached) {
+      return cached.candles.slice(-limit);
+    }
+    // Generate fallback
+    let basePrice = 100;
+    try {
+      basePrice = await fetchPrice(asset);
+    } catch {
+      const estimates: Record<string, number> = {
+        BTC: 95000, ETH: 3300, SOL: 180, DOGE: 0.35, AVAX: 35,
+        LINK: 22, ARB: 1.2, OP: 2.5, SUI: 4.5, PEPE: 0.000015,
+      };
+      basePrice = estimates[asset] || 100;
+    }
+    return generateFallbackCandles(basePrice, timeframe, limit);
   }
 
   const interval = TIMEFRAME_MAP[timeframe] || '1h';
@@ -167,6 +228,15 @@ async function fetchHyperliquidCandles(
 
     clearTimeout(timeoutId);
 
+    if (response.status === 429) {
+      setRateLimited();
+      // Return cached even if stale
+      if (cached) {
+        return cached.candles.slice(-limit);
+      }
+      throw new Error('Rate limited');
+    }
+
     if (!response.ok) {
       throw new Error(`Hyperliquid API error: ${response.status}`);
     }
@@ -191,6 +261,7 @@ async function fetchHyperliquidCandles(
 
     // Cache the results
     candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+    logger.info(`Cached ${candles.length} candles for ${asset} ${timeframe}`);
 
     return candles.slice(-limit);
   } catch (error) {
@@ -198,6 +269,7 @@ async function fetchHyperliquidCandles(
     
     // Return cached even if stale
     if (cached) {
+      logger.info(`Returning stale cache for ${asset}`);
       return cached.candles.slice(-limit);
     }
     

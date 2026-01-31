@@ -81,14 +81,22 @@ export function TradingPage() {
     }
   }, [isConnected, selectedAsset, isAuthenticated]);
 
+  // Initial fetch on mount
   useEffect(() => {
     fetchCandles(selectedAsset, selectedTimeframe);
+  }, []); // Only on mount
+
+  // Fetch account data when authenticated
+  useEffect(() => {
     if (isAuthenticated) {
       fetchPositions();
       fetchAccount();
       fetchStats();
     }
-  }, [selectedAsset, selectedTimeframe, isAuthenticated]);
+  }, [isAuthenticated]);
+
+  // Note: subsequent fetches are handled by setSelectedAsset and setSelectedTimeframe
+  // The deduplication in useMarketData prevents duplicate requests
 
   const handlePlaceOrder = async (order: Parameters<typeof placeOrder>[0]) => {
     if (!isAuthenticated) {
@@ -367,7 +375,7 @@ export function TradingPage() {
       {showAssetSearch && <AssetSearchModal />}
 
       {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col h-[100dvh] pb-14">
+      <div className="md:hidden flex flex-col h-[100dvh] pb-12">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 

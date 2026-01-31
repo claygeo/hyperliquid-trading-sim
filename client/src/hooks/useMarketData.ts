@@ -5,6 +5,9 @@ import type { Candle, Orderbook, OrderbookLevel, Trade, MarketData } from '../ty
 import type { WSMessage } from '../types/websocket';
 import { UI_CONSTANTS } from '../config/constants';
 
+// Track in-flight requests to prevent duplicates
+const pendingRequests = new Map<string, Promise<Candle[]>>();
+
 interface MarketDataState {
   // Current asset
   selectedAsset: string;
@@ -71,11 +74,41 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   },
 
   setSelectedTimeframe: (timeframe) => {
-    set({ selectedTimeframe: timeframe });
-    get().fetchCandles(get().selectedAsset, timeframe);
+    const currentTimeframe = get().selectedTimeframe;
+    if (currentTimeframe !== timeframe) {
+      set({ selectedTimeframe: timeframe });
+      get().fetchCandles(get().selectedAsset, timeframe);
+    }
   },
 
   fetchCandles: async (asset, timeframe) => {
+    const cacheKey = `${asset}-${timeframe}`;
+    
+    // Check if we already have recent data (within 5 seconds)
+    const existingCandles = get().candles.get(cacheKey);
+    if (existingCandles && existingCandles.length > 0) {
+      // Check if last candle is recent enough (within 60 seconds for 1m, scaled for other timeframes)
+      const lastCandle = existingCandles[existingCandles.length - 1];
+      const staleness = Date.now() - lastCandle.time;
+      const maxStaleness = timeframe === '1m' ? 60000 : timeframe === '5m' ? 120000 : 180000;
+      
+      if (staleness < maxStaleness) {
+        // Data is fresh, just update the price
+        set({ currentPrice: lastCandle.close, isLoadingCandles: false });
+        return;
+      }
+    }
+    
+    // If there's already a pending request for this exact key, wait for it
+    if (pendingRequests.has(cacheKey)) {
+      try {
+        await pendingRequests.get(cacheKey);
+      } catch {
+        // Ignore - the original request handler will deal with errors
+      }
+      return;
+    }
+    
     set({ isLoadingCandles: true });
     
     const fetchWithRetry = async (retries = 2): Promise<Candle[]> => {
@@ -85,17 +118,21 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
       } catch (error) {
         if (retries > 0) {
           console.log(`Retrying fetch for ${asset}... (${retries} left)`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
           return fetchWithRetry(retries - 1);
         }
         throw error;
       }
     };
     
+    // Create the promise and store it
+    const fetchPromise = fetchWithRetry();
+    pendingRequests.set(cacheKey, fetchPromise);
+    
     try {
-      const candles = await fetchWithRetry();
+      const candles = await fetchPromise;
       const candlesMap = new Map(get().candles);
-      candlesMap.set(`${asset}-${timeframe}`, candles);
+      candlesMap.set(cacheKey, candles);
       
       // Only update price if this is still the selected asset
       if (get().selectedAsset === asset && candles.length > 0) {
@@ -110,6 +147,9 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch candles:', error);
       set({ isLoadingCandles: false });
+    } finally {
+      // Remove from pending requests after a short delay to prevent immediate re-fetches
+      setTimeout(() => pendingRequests.delete(cacheKey), 2000);
     }
   },
 
@@ -189,6 +229,11 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   },
 
   subscribeToAsset: (asset) => {
+    // Skip if already subscribed to this asset
+    if (get().currentSubscribedAsset === asset) {
+      return;
+    }
+    
     // Mark as subscribed
     set({ currentSubscribedAsset: asset });
     

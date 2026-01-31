@@ -16,7 +16,7 @@ export function LeaderboardPage() {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <div className="h-full bg-[#0d0f11] pb-14 md:pb-0">
+    <div className="h-full bg-[#0d0f11] pb-12 md:pb-0">
       <div className="h-full overflow-auto p-4 md:p-6">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
