@@ -43,9 +43,10 @@ export function Modal({ isOpen, onClose, title, children, className }: ModalProp
         className={cn(
           'relative bg-bg-secondary border border-border rounded-xl shadow-2xl',
           'max-w-md w-full mx-4 p-6',
-          'animate-slide-up',
+          'animate-slide-up touch-manipulation',
           className
         )}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button

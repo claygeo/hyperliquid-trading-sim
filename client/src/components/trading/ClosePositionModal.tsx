@@ -71,12 +71,12 @@ export function ClosePositionModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
+          <Button variant="secondary" className="flex-1 py-3 touch-manipulation" onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant={isProfitable ? 'success' : 'danger'}
-            className="flex-1"
+            className="flex-1 py-3 touch-manipulation"
             onClick={onConfirm}
             isLoading={isClosing}
           >

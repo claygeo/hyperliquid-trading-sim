@@ -77,8 +77,23 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
 
   fetchCandles: async (asset, timeframe) => {
     set({ isLoadingCandles: true });
+    
+    const fetchWithRetry = async (retries = 2): Promise<Candle[]> => {
+      try {
+        const candles = await api.getCandles(asset, timeframe, UI_CONSTANTS.CHART_CANDLE_LIMIT);
+        return candles;
+      } catch (error) {
+        if (retries > 0) {
+          console.log(`Retrying fetch for ${asset}... (${retries} left)`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return fetchWithRetry(retries - 1);
+        }
+        throw error;
+      }
+    };
+    
     try {
-      const candles = await api.getCandles(asset, timeframe, UI_CONSTANTS.CHART_CANDLE_LIMIT);
+      const candles = await fetchWithRetry();
       const candlesMap = new Map(get().candles);
       candlesMap.set(`${asset}-${timeframe}`, candles);
       

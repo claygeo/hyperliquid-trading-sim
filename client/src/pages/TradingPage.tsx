@@ -269,10 +269,10 @@ export function TradingPage() {
         <div className="flex-1 min-h-0 overflow-hidden">
           {mobileView === 'chart' ? (
             <div className="h-full flex flex-col">
-              {/* Chart takes remaining space minus positions */}
+              {/* Chart - reduced height to show x-axis and volume */}
               <div className={cn(
                 'min-h-0',
-                openPositions.length > 0 ? 'flex-1' : 'h-full'
+                openPositions.length > 0 ? 'h-[calc(100%-120px)]' : 'h-[calc(100%-16px)]'
               )}>
                 <PriceChart
                   candles={currentCandles}
@@ -286,7 +286,7 @@ export function TradingPage() {
               </div>
               {/* Positions at bottom */}
               {isAuthenticated && openPositions.length > 0 && (
-                <div className="flex-shrink-0 border-t border-border bg-bg-secondary max-h-32 overflow-y-auto">
+                <div className="flex-shrink-0 border-t border-border bg-bg-secondary h-[120px] overflow-y-auto">
                   <PositionPanel
                     positions={positionsWithLivePnl}
                     onClosePosition={handleClosePosition}

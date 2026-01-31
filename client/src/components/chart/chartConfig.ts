@@ -96,11 +96,23 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
     ...chartConfig.layout,
     fontSize: 10,
   },
+  rightPriceScale: {
+    borderColor: 'rgba(42, 46, 57, 0.5)',
+    scaleMargins: {
+      top: 0.05,
+      bottom: 0.15, // Leave room for volume at bottom
+    },
+    autoScale: true,
+    alignLabels: true,
+  },
   timeScale: {
     ...chartConfig.timeScale,
     barSpacing: 6,
     minBarSpacing: 0.5,
     rightOffset: 3,
+    visible: true,
+    borderVisible: true,
+    ticksVisible: true,
   },
   handleScroll: {
     mouseWheel: true,
