@@ -27,7 +27,6 @@ export function TradingPage() {
   const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(null);
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
-  const [chartKey, setChartKey] = useState(0); // Force chart remount when switching back
   const { addToast } = useToast();
   const { isAuthenticated } = useAuthStore();
   const { fetchAssets, getFilteredAssets, searchQuery, setSearchQuery } = useAssetsStore();
@@ -56,13 +55,6 @@ export function TradingPage() {
   useEffect(() => {
     fetchAssets();
   }, []);
-
-  // Force chart refresh when switching back to chart view
-  useEffect(() => {
-    if (mobileView === 'markets' && marketsTab === 'chart') {
-      setChartKey(prev => prev + 1);
-    }
-  }, [mobileView, marketsTab]);
 
   const positionsWithLivePnl: Position[] = positions.map((position) => {
     if (position.asset !== selectedAsset || currentPrice <= 0) {
@@ -168,11 +160,17 @@ export function TradingPage() {
 
   const handleOrderbookPriceClick = useCallback((price: number) => {
     setLimitPriceFromOrderbook(price);
-    setMobileView('trade'); // Go to trade view when clicking a price
   }, []);
 
   const filteredAssets = getFilteredAssets();
   const openPositions = positions.filter(p => p.status === 'open');
+
+  // Trophy Icon Component (inline)
+  const TrophyIcon = () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 2C13.1 2 14 2.9 14 4V5H19C19.55 5 20 5.45 20 6V9C20 11.21 18.21 13 16 13H15.92C15.44 15.53 13.45 17.5 11 17.92V20H14C14.55 20 15 20.45 15 21C15 21.55 14.55 22 14 22H10C9.45 22 9 21.55 9 21C9 20.45 9.45 20 10 20H11V17.92C8.55 17.5 6.56 15.53 6.08 13H6C3.79 13 2 11.21 2 9V6C2 5.45 2.45 5 3 5H8V4C8 2.9 8.9 2 10 2H12ZM4 7V9C4 10.1 4.9 11 6 11H6.08C6.03 10.67 6 10.34 6 10V7H4ZM18 7H16V10C16 10.34 15.97 10.67 15.92 11H16C17.1 11 18 10.1 18 9V7ZM12 4H10C9.45 4 9 4.45 9 5V10C9 12.21 10.79 14 13 14C15.21 14 17 12.21 17 10V5C17 4.45 16.55 4 16 4H14V5C14 5.55 13.55 6 13 6C12.45 6 12 5.55 12 5V4Z"/>
+    </svg>
+  );
 
   // Asset Search Modal
   const AssetSearchModal = () => (
@@ -225,7 +223,7 @@ export function TradingPage() {
     </div>
   );
 
-  // Position Card Component
+  // Position Card Component with colored coin name
   const PositionCard = ({ position }: { position: Position }) => {
     const isExpanded = expandedPositionId === position.id;
     const isClosing = closingPositionId === position.id;
@@ -250,10 +248,16 @@ export function TradingPage() {
             <div className="text-left">
               <div className="text-gray-500 mb-0.5">Coin</div>
               <div className="flex items-baseline gap-1">
-                <span className="text-white font-medium">{position.asset}</span>
+                {/* Coin name colored based on long/short */}
+                <span className={cn(
+                  'font-medium',
+                  isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
+                )}>
+                  {position.asset}
+                </span>
                 <span className={cn(
                   'text-[10px] leading-none',
-                  isLong ? 'text-[#00d4ff]' : 'text-[#f6465d]'
+                  isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   {position.leverage}x
                 </span>
@@ -344,25 +348,25 @@ export function TradingPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <div className={cn(
-          'text-xl font-mono font-semibold',
-          currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
-            ? 'text-[#3dd9a4]' 
-            : 'text-[#f6465d]'
-        )}>
-          {currentPrice > 0 ? formatPrice(currentPrice) : '--'}
+        <div className="flex items-center gap-2">
+          <Link 
+            to="/leaderboard"
+            className="p-1.5 text-gray-400 hover:text-[#ffd700] transition-colors"
+            title="Leaderboard"
+          >
+            <TrophyIcon />
+          </Link>
+          <span className={cn(
+            'text-xl font-mono font-semibold',
+            currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
+              ? 'text-[#3dd9a4]' 
+              : 'text-[#f6465d]'
+          )}>
+            {currentPrice > 0 ? formatPrice(currentPrice) : '--'}
+          </span>
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Link 
-          to="/leaderboard"
-          className="p-2 text-gray-400 hover:text-[#ffd700] transition-colors"
-          title="Leaderboard"
-        >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-          </svg>
-        </Link>
         <div className={cn(
           'w-2 h-2 rounded-full',
           isConnected ? 'bg-[#3dd9a4]' : 'bg-[#f6465d]'
@@ -377,7 +381,7 @@ export function TradingPage() {
 
       {/* Mobile Layout */}
       <div className="md:hidden flex flex-col h-[100dvh] pb-12">
-        {/* Header with trophy icon */}
+        {/* Header with trophy LEFT of price */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 
             onClick={() => setShowAssetSearch(true)}
@@ -389,6 +393,13 @@ export function TradingPage() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
+            {/* Trophy icon LEFT of price */}
+            <Link 
+              to="/leaderboard"
+              className="p-1.5 text-gray-400 hover:text-[#ffd700] active:text-[#ffd700] transition-colors touch-manipulation"
+            >
+              <TrophyIcon />
+            </Link>
             <span className={cn(
               'text-base font-semibold tabular-nums',
               currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
@@ -397,15 +408,6 @@ export function TradingPage() {
             )}>
               {currentPrice > 0 ? formatPrice(currentPrice) : '--'}
             </span>
-            {/* Trophy icon for leaderboard */}
-            <Link 
-              to="/leaderboard"
-              className="p-1.5 text-gray-400 hover:text-[#ffd700] active:text-[#ffd700] transition-colors touch-manipulation"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-              </svg>
-            </Link>
             <div className={cn(
               'w-2 h-2 rounded-full',
               isConnected ? 'bg-[#3dd9a4]' : 'bg-[#f6465d]'
@@ -446,7 +448,6 @@ export function TradingPage() {
                     {/* Chart */}
                     <div className="flex-1 min-h-[200px]">
                       <PriceChart
-                        key={chartKey}
                         candles={currentCandles}
                         selectedAsset={selectedAsset}
                         selectedTimeframe={selectedTimeframe}
@@ -510,17 +511,31 @@ export function TradingPage() {
             </div>
           )}
           
-          {/* TRADE VIEW - Just the order form */}
+          {/* TRADE VIEW - Orderbook + Order Form side by side (like before) */}
           {mobileView === 'trade' && (
-            <div className="flex-1 overflow-y-auto">
-              <OrderForm
-                selectedAsset={selectedAsset}
-                currentPrice={currentPrice}
-                availableBalance={account?.availableMargin || 100000}
-                onPlaceOrder={handlePlaceOrder}
-                isPlacingOrder={isPlacingOrder}
-                externalLimitPrice={limitPriceFromOrderbook}
-              />
+            <div className="flex-1 flex min-h-0">
+              {/* Left side: Orderbook */}
+              <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
+                <Orderbook 
+                  orderbook={orderbook} 
+                  asset={selectedAsset} 
+                  compact 
+                  onPriceClick={handleOrderbookPriceClick}
+                />
+              </div>
+              
+              {/* Right side: Order Form */}
+              <div className="w-[55%] overflow-hidden">
+                <OrderForm
+                  selectedAsset={selectedAsset}
+                  currentPrice={currentPrice}
+                  availableBalance={account?.availableMargin || 100000}
+                  onPlaceOrder={handlePlaceOrder}
+                  isPlacingOrder={isPlacingOrder}
+                  compact
+                  externalLimitPrice={limitPriceFromOrderbook}
+                />
+              </div>
             </div>
           )}
         </div>

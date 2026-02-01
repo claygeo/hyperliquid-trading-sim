@@ -206,3 +206,14 @@ tradingRoutes.get('/account', authMiddleware, async (req: AuthenticatedRequest, 
     res.status(500).json({ error: 'Failed to fetch account' });
   }
 });
+
+// Get limit orders (placeholder - returns empty for now as we only support market orders)
+tradingRoutes.get('/limit-orders', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Return empty array - limit orders not implemented yet
+    res.json([]);
+  } catch (error) {
+    logger.error('Get limit orders error:', error);
+    res.status(500).json({ error: 'Failed to fetch limit orders' });
+  }
+});

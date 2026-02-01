@@ -69,10 +69,12 @@ export function PriceChart({
   const [containerWidth, setContainerWidth] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const [showHelperText, setShowHelperText] = useState(true);
+  const [chartReady, setChartReady] = useState(false);
   
   const prevAssetRef = useRef<string>(selectedAsset);
   const prevTimeframeRef = useRef<string>(selectedTimeframe);
   const initialLoadRef = useRef<boolean>(true);
+  const initAttemptRef = useRef<number>(0);
   
   const touchStateRef = useRef<{
     isActive: boolean;
@@ -124,207 +126,245 @@ export function PriceChart({
     }
   }, []);
 
-  // Initialize chart with volume
+  // Initialize chart with mobile-safe dimension checking
   useEffect(() => {
-    if (!containerRef.current) return;
-
-    const config = isMobile ? mobileChartConfig : chartConfig;
-    
-    const chart = createChart(containerRef.current, {
-      ...config,
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          width: 1,
-          color: 'rgba(255, 255, 255, 0.1)',
-          style: 0,
-        },
-        horzLine: {
-          width: 1,
-          color: 'rgba(255, 255, 255, 0.1)',
-          style: 0,
-        },
-      },
-      handleScroll: {
-        vertTouchDrag: true,
-        horzTouchDrag: true,
-        mouseWheel: true,
-        pressedMouseMove: true,
-      },
-      handleScale: {
-        axisPressedMouseMove: {
-          time: true,
-          price: true,
-        },
-        axisDoubleClickReset: {
-          time: true,
-          price: true,
-        },
-        mouseWheel: true,
-        pinch: true,
-      },
-    });
-
-    // Add candlestick series with proper price formatting
-    const candleSeries = chart.addCandlestickSeries({
-      ...candlestickConfig,
-      priceScaleId: 'right',
-      priceFormat: {
-        type: 'price',
-        precision: 2,
-        minMove: 0.01,
-      },
-    });
-
-    // Add volume histogram series
-    const volumeSeries = chart.addHistogramSeries({
-      ...volumeConfig,
-      priceScaleId: 'volume',
-      priceFormat: { type: 'volume' },
-    });
-
-    // Configure volume price scale - compact view
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: {
-        top: compact ? 0.85 : 0.80,
-        bottom: 0,
-      },
-      borderVisible: false,
-    });
-
-    chartRef.current = chart;
-    candleSeriesRef.current = candleSeries;
-    volumeSeriesRef.current = volumeSeries;
-    setContainerWidth(containerRef.current.clientWidth);
-
-    chart.applyOptions({
-      timeScale: {
-        minBarSpacing: getMinBarSpacing(selectedTimeframe),
-        rightOffset: 5,
-        barSpacing: isMobile ? 6 : 8,
-      },
-    });
-
+    let retryTimeout: ReturnType<typeof setTimeout>;
     let resizeTimeout: ReturnType<typeof setTimeout>;
-    const handleResize = () => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
-        if (containerRef.current && chartRef.current) {
-          const width = containerRef.current.clientWidth;
-          const height = containerRef.current.clientHeight;
-          // Only resize if container has valid dimensions
-          if (width > 0 && height > 0) {
-            chartRef.current.applyOptions({ width, height });
-            setContainerWidth(width);
-            // Fit content after resize to ensure proper display
-            chartRef.current.timeScale().fitContent();
-          }
-        }
-      }, 100);
-    };
-
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(containerRef.current);
-
-    chart.subscribeCrosshairMove((param) => {
-      if (!param.point || !param.time || !candleSeriesRef.current) {
-        setHoveredCandle(null);
-        return;
-      }
-
-      if (touchStateRef.current.isActive) {
-        setHoveredCandle(null);
-        return;
-      }
-
-      const timeKey = param.time as number;
-      const data = param.seriesData.get(candleSeriesRef.current) as CandlestickData;
+    let resizeObserver: ResizeObserver | null = null;
+    
+    const createChartInstance = (): boolean => {
+      if (!containerRef.current) return false;
       
-      if (data) {
-        const fullCandle = candleMapRef.current.get(timeKey);
-        
-        setHoveredCandle({
-          time: timeKey * 1000,
-          open: data.open,
-          high: data.high,
-          low: data.low,
-          close: data.close,
-          volume: fullCandle?.volume ?? 0,
-        });
-        setTooltipPosition({ x: param.point.x, y: param.point.y });
-      }
-    });
-
-    const chartElement = containerRef.current;
-    
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStateRef.current.isActive = true;
-      setHoveredCandle(null);
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
       
-      if (e.touches.length === 1) {
-        const now = Date.now();
-        const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
-        
-        if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
-          touchStateRef.current.tapCount++;
-        } else {
-          touchStateRef.current.tapCount = 1;
-        }
-        
-        touchStateRef.current.lastTapTime = now;
+      // Don't create if container has no/tiny dimensions (mobile tab switch)
+      if (width < 50 || height < 50) {
+        return false;
       }
-    };
-    
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0) {
-        const now = Date.now();
-        const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
-        
-        if (touchStateRef.current.tapCount >= 2 && timeSinceLastTap < DOUBLE_TAP_DELAY) {
-          resetChartZoom();
-          touchStateRef.current.tapCount = 0;
+
+      // Remove existing chart
+      if (chartRef.current) {
+        try {
+          chartRef.current.remove();
+        } catch (e) {
+          // Ignore removal errors
         }
-        
-        setTimeout(() => {
-          touchStateRef.current.isActive = false;
-        }, 100);
+        chartRef.current = null;
+        candleSeriesRef.current = null;
+        volumeSeriesRef.current = null;
       }
-    };
-    
-    const handleTouchMove = () => {
-      touchStateRef.current.tapCount = 0;
-      setHoveredCandle(null);
-    };
 
-    chartElement.addEventListener('touchstart', handleTouchStart, { passive: true });
-    chartElement.addEventListener('touchend', handleTouchEnd, { passive: true });
-    chartElement.addEventListener('touchmove', handleTouchMove, { passive: true });
-
-    return () => {
-      clearTimeout(resizeTimeout);
-      resizeObserver.disconnect();
-      chartElement.removeEventListener('touchstart', handleTouchStart);
-      chartElement.removeEventListener('touchend', handleTouchEnd);
-      chartElement.removeEventListener('touchmove', handleTouchMove);
-      chart.remove();
-    };
-  }, [isMobile, resetChartZoom, compact]);
-
-  useEffect(() => {
-    if (chartRef.current) {
-      chartRef.current.applyOptions({
-        timeScale: {
-          minBarSpacing: getMinBarSpacing(selectedTimeframe),
+      const config = isMobile ? mobileChartConfig : chartConfig;
+      
+      const chart = createChart(containerRef.current, {
+        ...config,
+        width,
+        height,
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: {
+            width: 1,
+            color: 'rgba(255, 255, 255, 0.1)',
+            style: 0,
+          },
+          horzLine: {
+            width: 1,
+            color: 'rgba(255, 255, 255, 0.1)',
+            style: 0,
+          },
+        },
+        handleScroll: {
+          vertTouchDrag: true,
+          horzTouchDrag: true,
+          mouseWheel: true,
+          pressedMouseMove: true,
+        },
+        handleScale: {
+          axisPressedMouseMove: {
+            time: true,
+            price: true,
+          },
+          axisDoubleClickReset: {
+            time: true,
+            price: true,
+          },
+          mouseWheel: true,
+          pinch: true,
         },
       });
-    }
-  }, [selectedTimeframe]);
 
-  // Update chart data with volume - with improved price scale handling
+      const candleSeries = chart.addCandlestickSeries({
+        ...candlestickConfig,
+        priceScaleId: 'right',
+        priceFormat: {
+          type: 'price',
+          precision: 2,
+          minMove: 0.01,
+        },
+      });
+
+      const volumeSeries = chart.addHistogramSeries({
+        ...volumeConfig,
+        priceScaleId: 'volume',
+        priceFormat: { type: 'volume' },
+      });
+
+      chart.priceScale('volume').applyOptions({
+        scaleMargins: {
+          top: compact ? 0.85 : 0.80,
+          bottom: 0,
+        },
+        borderVisible: false,
+      });
+
+      chartRef.current = chart;
+      candleSeriesRef.current = candleSeries;
+      volumeSeriesRef.current = volumeSeries;
+      setContainerWidth(width);
+      setChartReady(true);
+
+      chart.applyOptions({
+        timeScale: {
+          minBarSpacing: getMinBarSpacing(selectedTimeframe),
+          rightOffset: 5,
+          barSpacing: isMobile ? 6 : 8,
+        },
+      });
+
+      // Setup resize observer
+      const handleResize = () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          if (containerRef.current && chartRef.current) {
+            const w = containerRef.current.clientWidth;
+            const h = containerRef.current.clientHeight;
+            if (w > 50 && h > 50) {
+              chartRef.current.applyOptions({ width: w, height: h });
+              setContainerWidth(w);
+              chartRef.current.timeScale().fitContent();
+            }
+          }
+        }, 100);
+      };
+
+      resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(containerRef.current);
+
+      // Crosshair move handler
+      chart.subscribeCrosshairMove((param) => {
+        if (!param.point || !param.time || !candleSeriesRef.current) {
+          setHoveredCandle(null);
+          return;
+        }
+
+        if (touchStateRef.current.isActive) {
+          setHoveredCandle(null);
+          return;
+        }
+
+        const timeKey = param.time as number;
+        const data = param.seriesData.get(candleSeriesRef.current) as CandlestickData;
+        
+        if (data) {
+          const fullCandle = candleMapRef.current.get(timeKey);
+          
+          setHoveredCandle({
+            time: timeKey * 1000,
+            open: data.open,
+            high: data.high,
+            low: data.low,
+            close: data.close,
+            volume: fullCandle?.volume ?? 0,
+          });
+          setTooltipPosition({ x: param.point.x, y: param.point.y });
+        }
+      });
+
+      // Touch handlers for mobile
+      const chartElement = containerRef.current;
+      
+      const handleTouchStart = (e: TouchEvent) => {
+        touchStateRef.current.isActive = true;
+        setHoveredCandle(null);
+        
+        if (e.touches.length === 1) {
+          const now = Date.now();
+          const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
+          
+          if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
+            touchStateRef.current.tapCount++;
+          } else {
+            touchStateRef.current.tapCount = 1;
+          }
+          
+          touchStateRef.current.lastTapTime = now;
+        }
+      };
+      
+      const handleTouchEnd = (e: TouchEvent) => {
+        if (e.touches.length === 0) {
+          const now = Date.now();
+          const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
+          
+          if (touchStateRef.current.tapCount >= 2 && timeSinceLastTap < DOUBLE_TAP_DELAY) {
+            resetChartZoom();
+            touchStateRef.current.tapCount = 0;
+          }
+          
+          setTimeout(() => {
+            touchStateRef.current.isActive = false;
+          }, 100);
+        }
+      };
+      
+      const handleTouchMove = () => {
+        touchStateRef.current.tapCount = 0;
+        setHoveredCandle(null);
+      };
+
+      chartElement.addEventListener('touchstart', handleTouchStart, { passive: true });
+      chartElement.addEventListener('touchend', handleTouchEnd, { passive: true });
+      chartElement.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+      return true;
+    };
+
+    // Try to create chart, retry if dimensions aren't ready
+    const attemptCreate = () => {
+      initAttemptRef.current++;
+      const success = createChartInstance();
+      
+      if (!success && initAttemptRef.current < 10) {
+        // Retry after a short delay (helps with mobile tab switching)
+        retryTimeout = setTimeout(attemptCreate, 100);
+      }
+    };
+
+    // Initial delay for mobile to ensure layout is ready
+    retryTimeout = setTimeout(attemptCreate, isMobile ? 50 : 0);
+
+    return () => {
+      clearTimeout(retryTimeout);
+      clearTimeout(resizeTimeout);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      if (chartRef.current) {
+        try {
+          chartRef.current.remove();
+        } catch (e) {
+          // Ignore
+        }
+      }
+      setChartReady(false);
+      initAttemptRef.current = 0;
+    };
+  }, [isMobile, resetChartZoom, compact, selectedTimeframe]);
+
+  // Update chart data
   useEffect(() => {
-    if (!candleSeriesRef.current || !volumeSeriesRef.current || sortedCandles.length === 0) return;
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || sortedCandles.length === 0 || !chartReady) return;
 
     const candleData: CandlestickData[] = sortedCandles.map((c) => ({
       time: Math.floor(c.time / 1000) as Time,
@@ -340,7 +380,6 @@ export function PriceChart({
       color: c.close >= c.open ? 'rgba(14, 203, 129, 0.4)' : 'rgba(246, 70, 93, 0.4)',
     }));
 
-    // Set data
     candleSeriesRef.current.setData(candleData);
     volumeSeriesRef.current.setData(volumeData);
 
@@ -372,14 +411,12 @@ export function PriceChart({
     const timeframeChanged = prevTimeframeRef.current !== selectedTimeframe;
     const isInitialLoad = initialLoadRef.current;
     
-    // Always fit content when data changes significantly or on initial load
+    // Always fit content and scroll to latest
     if (isInitialLoad || assetChanged || timeframeChanged || sortedCandles.length > 1) {
-      // Use multiple frames to ensure DOM is ready
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (chartRef.current) {
             chartRef.current.timeScale().fitContent();
-            // Scroll to show the most recent candles
             chartRef.current.timeScale().scrollToRealTime();
           }
         });
@@ -388,7 +425,7 @@ export function PriceChart({
       prevAssetRef.current = selectedAsset;
       prevTimeframeRef.current = selectedTimeframe;
     }
-  }, [sortedCandles, selectedAsset, selectedTimeframe]);
+  }, [sortedCandles, selectedAsset, selectedTimeframe, chartReady]);
 
   // Update last candle with live price
   const updateLivePrice = useCallback(() => {
@@ -501,7 +538,7 @@ export function PriceChart({
       />
 
       {/* Loading overlay */}
-      {isLoading && sortedCandles.length === 0 && (
+      {(isLoading || !chartReady) && sortedCandles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#0d0f11]/80 backdrop-blur-sm z-20">
           <div className="flex flex-col items-center gap-3">
             <Spinner size="lg" />
