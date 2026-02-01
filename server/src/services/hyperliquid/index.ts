@@ -17,93 +17,89 @@ const TIMEFRAME_MS: Record<string, number> = {
   '1d': 24 * 60 * 60 * 1000,
 };
 
-// Map our timeframes to Bybit intervals
-const BYBIT_INTERVALS: Record<string, string> = {
-  '1m': '1',
-  '5m': '5',
-  '15m': '15',
-  '1h': '60',
-  '4h': '240',
-  '1d': 'D',
+// Map our timeframes to CryptoCompare API endpoints and parameters
+const CRYPTOCOMPARE_INTERVALS: Record<string, { endpoint: string; aggregate: number }> = {
+  '1m': { endpoint: 'histominute', aggregate: 1 },
+  '5m': { endpoint: 'histominute', aggregate: 5 },
+  '15m': { endpoint: 'histominute', aggregate: 15 },
+  '1h': { endpoint: 'histohour', aggregate: 1 },
+  '4h': { endpoint: 'histohour', aggregate: 4 },
+  '1d': { endpoint: 'histoday', aggregate: 1 },
 };
 
-// Map asset symbols to Bybit trading pairs (linear perpetuals)
-const BYBIT_SYMBOLS: Record<string, string> = {
-  BTC: 'BTCUSDT',
-  ETH: 'ETHUSDT',
-  SOL: 'SOLUSDT',
-  DOGE: 'DOGEUSDT',
-  XRP: 'XRPUSDT',
-  ADA: 'ADAUSDT',
-  AVAX: 'AVAXUSDT',
-  LINK: 'LINKUSDT',
-  DOT: 'DOTUSDT',
-  MATIC: 'MATICUSDT',
-  UNI: 'UNIUSDT',
-  ATOM: 'ATOMUSDT',
-  LTC: 'LTCUSDT',
-  ARB: 'ARBUSDT',
-  OP: 'OPUSDT',
-  SUI: 'SUIUSDT',
-  APT: 'APTUSDT',
-  NEAR: 'NEARUSDT',
-  INJ: 'INJUSDT',
-  FTM: 'FTMUSDT',
-  AAVE: 'AAVEUSDT',
-  MKR: 'MKRUSDT',
-  SNX: 'SNXUSDT',
-  CRV: 'CRVUSDT',
-  PEPE: 'PEPEUSDT',
-  WIF: 'WIFUSDT',
-  HYPE: 'HYPEUSDT',
-  TIA: 'TIAUSDT',
-  SEI: 'SEIUSDT',
-  JUP: 'JUPUSDT',
-  RENDER: 'RENDERUSDT',
-  FET: 'FETUSDT',
-  PENDLE: 'PENDLEUSDT',
-  STX: 'STXUSDT',
-  IMX: 'IMXUSDT',
-  WLD: 'WLDUSDT',
-  RUNE: 'RUNEUSDT',
-  ENS: 'ENSUSDT',
-  ONDO: 'ONDOUSDT',
-  FIL: 'FILUSDT',
-  GALA: 'GALAUSDT',
-  SAND: 'SANDUSDT',
-  MANA: 'MANAUSDT',
-  AXS: 'AXSUSDT',
-  DYDX: 'DYDXUSDT',
-  GMX: 'GMXUSDT',
-  LDO: 'LDOUSDT',
-  ENA: 'ENAUSDT',
-  STRK: 'STRKUSDT',
-  BLUR: 'BLURUSDT',
-  ORDI: 'ORDIUSDT',
-  BONK: 'BONKUSDT',
-  FLOKI: 'FLOKIUSDT',
-  SHIB: 'SHIBUSDT',
-  BNB: 'BNBUSDT',
-  TRX: 'TRXUSDT',
-  TON: 'TONUSDT',
-  XLM: 'XLMUSDT',
-  ALGO: 'ALGOUSDT',
-  ICP: 'ICPUSDT',
-  HBAR: 'HBARUSDT',
-  ETC: 'ETCUSDT',
-  BCH: 'BCHUSDT',
-  ZEC: 'ZECUSDT',
-  TRUMP: 'TRUMPUSDT',
-  TAO: 'TAOUSDT',
-  EIGEN: 'EIGENUSDT',
-  AR: 'ARUSDT',
-  GRT: 'GRTUSDT',
-  PYTH: 'PYTHUSDT',
-  JTO: 'JTOUSDT',
-  MEME: 'MEMEUSDT',
-  BOME: 'BOMEUSDT',
-  // Note: BONK, SHIB, PEPE, FLOKI use 1000x multiplier on Bybit
-  // Keeping regular symbols - prices will be slightly different but chart shape is same
+// CryptoCompare uses standard symbols (BTC, ETH, etc.) - no mapping needed for most
+const CRYPTOCOMPARE_SYMBOLS: Record<string, string> = {
+  BTC: 'BTC',
+  ETH: 'ETH',
+  SOL: 'SOL',
+  DOGE: 'DOGE',
+  XRP: 'XRP',
+  ADA: 'ADA',
+  AVAX: 'AVAX',
+  LINK: 'LINK',
+  DOT: 'DOT',
+  MATIC: 'MATIC',
+  UNI: 'UNI',
+  ATOM: 'ATOM',
+  LTC: 'LTC',
+  ARB: 'ARB',
+  OP: 'OP',
+  SUI: 'SUI',
+  APT: 'APT',
+  NEAR: 'NEAR',
+  INJ: 'INJ',
+  FTM: 'FTM',
+  AAVE: 'AAVE',
+  MKR: 'MKR',
+  SNX: 'SNX',
+  CRV: 'CRV',
+  PEPE: 'PEPE',
+  WIF: 'WIF',
+  TIA: 'TIA',
+  SEI: 'SEI',
+  JUP: 'JUP',
+  RENDER: 'RENDER',
+  FET: 'FET',
+  PENDLE: 'PENDLE',
+  STX: 'STX',
+  IMX: 'IMX',
+  WLD: 'WLD',
+  RUNE: 'RUNE',
+  ENS: 'ENS',
+  ONDO: 'ONDO',
+  FIL: 'FIL',
+  GALA: 'GALA',
+  SAND: 'SAND',
+  MANA: 'MANA',
+  AXS: 'AXS',
+  DYDX: 'DYDX',
+  GMX: 'GMX',
+  LDO: 'LDO',
+  ENA: 'ENA',
+  STRK: 'STRK',
+  BLUR: 'BLUR',
+  ORDI: 'ORDI',
+  BONK: 'BONK',
+  FLOKI: 'FLOKI',
+  SHIB: 'SHIB',
+  BNB: 'BNB',
+  TRX: 'TRX',
+  TON: 'TON',
+  XLM: 'XLM',
+  ALGO: 'ALGO',
+  ICP: 'ICP',
+  HBAR: 'HBAR',
+  ETC: 'ETC',
+  BCH: 'BCH',
+  ZEC: 'ZEC',
+  TRUMP: 'TRUMP',
+  TAO: 'TAO',
+  EIGEN: 'EIGEN',
+  AR: 'AR',
+  GRT: 'GRT',
+  PYTH: 'PYTH',
+  JTO: 'JTO',
+  HYPE: 'HYPE',
 };
 
 // Cache TTL for historical candles - longer for reliability
@@ -362,14 +358,14 @@ export class HyperliquidService {
     logger.info(`Subscribed to ${asset} orderbook`);
   }
 
-  // Fetch candles from Bybit REST API (globally accessible, no geo-restrictions)
+  // Fetch candles from CryptoCompare API (no geo-restrictions, dedicated data API)
   private async fetchCandlesFromREST(asset: string, timeframe: string, limit: number): Promise<Candle[]> {
-    const bybitSymbol = BYBIT_SYMBOLS[asset];
-    const bybitInterval = BYBIT_INTERVALS[timeframe] || '60';
+    const ccSymbol = CRYPTOCOMPARE_SYMBOLS[asset];
+    const intervalConfig = CRYPTOCOMPARE_INTERVALS[timeframe] || CRYPTOCOMPARE_INTERVALS['1h'];
     
-    // If no Bybit mapping, try Hyperliquid as fallback
-    if (!bybitSymbol) {
-      logger.warn(`No Bybit mapping for ${asset}, trying Hyperliquid`);
+    // If no CryptoCompare mapping, try Hyperliquid as fallback
+    if (!ccSymbol) {
+      logger.warn(`No CryptoCompare mapping for ${asset}, trying Hyperliquid`);
       return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
     }
 
@@ -377,8 +373,10 @@ export class HyperliquidService {
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
-      // Bybit v5 API - publicly accessible worldwide
-      const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${bybitSymbol}&interval=${bybitInterval}&limit=${Math.min(limit, 1000)}`;
+      // CryptoCompare free API - no API key needed, no geo-restrictions
+      // Adjust limit for aggregate (e.g., for 5m candles, we need 5x more 1m candles)
+      const adjustedLimit = Math.min(Math.ceil(limit / intervalConfig.aggregate) * intervalConfig.aggregate, 2000);
+      const url = `https://min-api.cryptocompare.com/data/v2/${intervalConfig.endpoint}?fsym=${ccSymbol}&tsym=USD&limit=${adjustedLimit}&aggregate=${intervalConfig.aggregate}`;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -388,39 +386,48 @@ export class HyperliquidService {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Bybit API error: ${response.status}`);
+        throw new Error(`CryptoCompare API error: ${response.status}`);
       }
 
       const data = await response.json() as {
-        retCode: number;
-        retMsg: string;
-        result?: { list?: string[][] };
+        Response: string;
+        Message?: string;
+        Data?: {
+          Data?: Array<{
+            time: number;
+            open: number;
+            high: number;
+            low: number;
+            close: number;
+            volumefrom: number;
+          }>;
+        };
       };
 
-      if (data.retCode !== 0 || !data.result?.list || data.result.list.length === 0) {
-        throw new Error(`Bybit API error: ${data.retMsg || 'Empty response'}`);
+      if (data.Response !== 'Success' || !data.Data?.Data || data.Data.Data.length === 0) {
+        throw new Error(`CryptoCompare API error: ${data.Message || 'Empty response'}`);
       }
 
-      // Bybit kline format: [startTime, open, high, low, close, volume, turnover]
-      // Note: Bybit returns data in reverse chronological order (newest first)
-      const candles: Candle[] = data.result.list.map((c: string[]) => ({
-        time: parseInt(c[0]), // startTime in ms
-        open: parseFloat(c[1]),
-        high: parseFloat(c[2]),
-        low: parseFloat(c[3]),
-        close: parseFloat(c[4]),
-        volume: parseFloat(c[5]),
+      // CryptoCompare returns time in seconds, convert to ms
+      const candles: Candle[] = data.Data.Data.map((c) => ({
+        time: c.time * 1000,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volumefrom,
       }));
 
-      // Sort chronologically (oldest first) since Bybit returns newest first
-      candles.sort((a, b) => a.time - b.time);
+      // Filter out zero-price candles and sort
+      const validCandles = candles.filter(c => c.open > 0 && c.close > 0);
+      validCandles.sort((a, b) => a.time - b.time);
       
-      logger.info(`Fetched ${candles.length} candles from Bybit for ${asset} (${bybitSymbol}) ${timeframe}`);
-      return candles;
+      logger.info(`Fetched ${validCandles.length} candles from CryptoCompare for ${asset} ${timeframe}`);
+      return validCandles.slice(-limit);
     } catch (error) {
       clearTimeout(timeoutId);
-      logger.warn(`Bybit fetch failed for ${asset}, trying Hyperliquid: ${error}`);
-      // Fallback to Hyperliquid if Bybit fails
+      logger.warn(`CryptoCompare fetch failed for ${asset}, trying Hyperliquid: ${error}`);
+      // Fallback to Hyperliquid if CryptoCompare fails
       return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
     }
   }
