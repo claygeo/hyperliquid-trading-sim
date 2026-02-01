@@ -18,15 +18,16 @@ import { cn, formatPrice, formatSize, formatUSD, formatPercent } from '../lib/ut
 import { AnimatedNumber } from '../components/ui/AnimatedNumber';
 import type { Position } from '../types/trading';
 
-type MobileView = 'chart' | 'trade';
-type TradeTab = 'orderbook' | 'trades';
+type MobileView = 'markets' | 'trade';
+type MarketsTab = 'chart' | 'orderbook';
 
 export function TradingPage() {
-  const [mobileView, setMobileView] = useState<MobileView>('chart');
-  const [tradeTab, setTradeTab] = useState<TradeTab>('orderbook');
+  const [mobileView, setMobileView] = useState<MobileView>('markets');
+  const [marketsTab, setMarketsTab] = useState<MarketsTab>('chart');
   const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(null);
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
+  const [chartKey, setChartKey] = useState(0); // Force chart remount when switching back
   const { addToast } = useToast();
   const { isAuthenticated } = useAuthStore();
   const { fetchAssets, getFilteredAssets, searchQuery, setSearchQuery } = useAssetsStore();
@@ -55,6 +56,13 @@ export function TradingPage() {
   useEffect(() => {
     fetchAssets();
   }, []);
+
+  // Force chart refresh when switching back to chart view
+  useEffect(() => {
+    if (mobileView === 'markets' && marketsTab === 'chart') {
+      setChartKey(prev => prev + 1);
+    }
+  }, [mobileView, marketsTab]);
 
   const positionsWithLivePnl: Position[] = positions.map((position) => {
     if (position.asset !== selectedAsset || currentPrice <= 0) {
@@ -160,6 +168,7 @@ export function TradingPage() {
 
   const handleOrderbookPriceClick = useCallback((price: number) => {
     setLimitPriceFromOrderbook(price);
+    setMobileView('trade'); // Go to trade view when clicking a price
   }, []);
 
   const filteredAssets = getFilteredAssets();
@@ -367,7 +376,7 @@ export function TradingPage() {
       {showAssetSearch && <AssetSearchModal />}
 
       {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col h-[100dvh] pb-14">
+      <div className="md:hidden flex flex-col h-[100dvh] pb-12">
         {/* Header with trophy icon */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 
@@ -381,7 +390,7 @@ export function TradingPage() {
           </button>
           <div className="flex items-center gap-2">
             <span className={cn(
-              'font-sans text-base font-semibold tabular-nums',
+              'text-base font-semibold tabular-nums',
               currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
                 ? 'text-[#3dd9a4]' 
                 : 'text-[#f6465d]'
@@ -406,75 +415,21 @@ export function TradingPage() {
 
         {/* Main content based on mobile view */}
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          {mobileView === 'chart' && (
-            <>
-              {/* Chart */}
-              <div className="flex-1 min-h-[200px]">
-                <PriceChart
-                  candles={currentCandles}
-                  selectedAsset={selectedAsset}
-                  selectedTimeframe={selectedTimeframe}
-                  onTimeframeChange={setSelectedTimeframe}
-                  isLoading={isLoadingCandles}
-                  currentPrice={currentPrice}
-                  compact
-                />
-              </div>
-
-              {/* Positions section */}
-              <div className="flex flex-col border-t border-[#1e2126]">
-                <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
-                  <span className="text-sm font-medium text-white">
-                    Positions ({openPositions.length})
-                  </span>
-                  {openPositions.length > 0 && (
-                    <>
-                      <span className="text-gray-600">|</span>
-                      <button
-                        onClick={handleCloseAllPositions}
-                        className="text-xs text-[#f6465d] touch-manipulation"
-                      >
-                        Close All Positions
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                <div className={cn(
-                  'overflow-y-auto',
-                  openPositions.length === 0 ? 'py-4' : 'max-h-[40vh]'
-                )}>
-                  {openPositions.length === 0 ? (
-                    <div className="flex flex-col items-center text-gray-500 text-sm">
-                      <p>No open positions</p>
-                      {!isAuthenticated && (
-                        <Link to="/login" className="text-[#00d4ff] mt-1 touch-manipulation">Login to trade</Link>
-                      )}
-                    </div>
-                  ) : (
-                    openPositions.map((position) => (
-                      <PositionCard key={position.id} position={positionsWithLivePnl.find(p => p.id === position.id) || position} />
-                    ))
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-          
-          {mobileView === 'trade' && (
+          {/* MARKETS VIEW */}
+          {mobileView === 'markets' && (
             <div className="flex flex-col h-full">
-              {/* Trade view tabs: Order Book | Trades */}
+              {/* Markets sub-tabs: Chart | Order Book */}
               <div className="flex border-b border-[#1e2126] bg-[#0d0f11] flex-shrink-0">
                 {[
+                  { id: 'chart', label: 'Chart' },
                   { id: 'orderbook', label: 'Order Book' },
-                  { id: 'trades', label: 'Trades' },
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setTradeTab(tab.id as TradeTab)}
+                    onClick={() => setMarketsTab(tab.id as MarketsTab)}
                     className={cn(
-                      'flex-1 py-2 text-sm font-medium transition-colors touch-manipulation',
-                      tradeTab === tab.id 
+                      'flex-1 py-2.5 text-sm font-medium transition-colors touch-manipulation',
+                      marketsTab === tab.id 
                         ? 'text-white border-b-2 border-[#00d4ff]' 
                         : 'text-gray-500'
                     )}
@@ -484,35 +439,88 @@ export function TradingPage() {
                 ))}
               </div>
 
-              {/* Trade content */}
-              <div className="flex-1 flex min-h-0">
-                {/* Left side: Order Book or Trades */}
-                <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
-                  {tradeTab === 'orderbook' ? (
+              {/* Markets content */}
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                {marketsTab === 'chart' && (
+                  <>
+                    {/* Chart */}
+                    <div className="flex-1 min-h-[200px]">
+                      <PriceChart
+                        key={chartKey}
+                        candles={currentCandles}
+                        selectedAsset={selectedAsset}
+                        selectedTimeframe={selectedTimeframe}
+                        onTimeframeChange={setSelectedTimeframe}
+                        isLoading={isLoadingCandles}
+                        currentPrice={currentPrice}
+                        compact
+                      />
+                    </div>
+
+                    {/* Positions section */}
+                    <div className="flex flex-col border-t border-[#1e2126]">
+                      <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
+                        <span className="text-sm font-medium text-white">
+                          Positions ({openPositions.length})
+                        </span>
+                        {openPositions.length > 0 && (
+                          <>
+                            <span className="text-gray-600">|</span>
+                            <button
+                              onClick={handleCloseAllPositions}
+                              className="text-xs text-[#f6465d] touch-manipulation"
+                            >
+                              Close All Positions
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <div className={cn(
+                        'overflow-y-auto',
+                        openPositions.length === 0 ? 'py-4' : 'max-h-[40vh]'
+                      )}>
+                        {openPositions.length === 0 ? (
+                          <div className="flex flex-col items-center text-gray-500 text-sm">
+                            <p>No open positions</p>
+                            {!isAuthenticated && (
+                              <Link to="/login" className="text-[#00d4ff] mt-1 touch-manipulation">Login to trade</Link>
+                            )}
+                          </div>
+                        ) : (
+                          openPositions.map((position) => (
+                            <PositionCard key={position.id} position={positionsWithLivePnl.find(p => p.id === position.id) || position} />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {marketsTab === 'orderbook' && (
+                  <div className="flex-1 overflow-hidden">
                     <Orderbook 
                       orderbook={orderbook} 
                       asset={selectedAsset} 
-                      compact 
                       onPriceClick={handleOrderbookPriceClick}
                     />
-                  ) : (
-                    <RecentTrades trades={trades} asset={selectedAsset} />
-                  )}
-                </div>
-                
-                {/* Right side: Order Form */}
-                <div className="w-[55%] overflow-hidden">
-                  <OrderForm
-                    selectedAsset={selectedAsset}
-                    currentPrice={currentPrice}
-                    availableBalance={account?.availableMargin || 100000}
-                    onPlaceOrder={handlePlaceOrder}
-                    isPlacingOrder={isPlacingOrder}
-                    compact
-                    externalLimitPrice={limitPriceFromOrderbook}
-                  />
-                </div>
+                  </div>
+                )}
               </div>
+            </div>
+          )}
+          
+          {/* TRADE VIEW - Just the order form */}
+          {mobileView === 'trade' && (
+            <div className="flex-1 overflow-y-auto">
+              <OrderForm
+                selectedAsset={selectedAsset}
+                currentPrice={currentPrice}
+                availableBalance={account?.availableMargin || 100000}
+                onPlaceOrder={handlePlaceOrder}
+                isPlacingOrder={isPlacingOrder}
+                externalLimitPrice={limitPriceFromOrderbook}
+              />
             </div>
           )}
         </div>

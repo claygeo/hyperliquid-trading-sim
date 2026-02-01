@@ -214,10 +214,15 @@ export function PriceChart({
         if (containerRef.current && chartRef.current) {
           const width = containerRef.current.clientWidth;
           const height = containerRef.current.clientHeight;
-          chartRef.current.applyOptions({ width, height });
-          setContainerWidth(width);
+          // Only resize if container has valid dimensions
+          if (width > 0 && height > 0) {
+            chartRef.current.applyOptions({ width, height });
+            setContainerWidth(width);
+            // Fit content after resize to ensure proper display
+            chartRef.current.timeScale().fitContent();
+          }
         }
-      }, 50);
+      }, 100);
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
@@ -367,9 +372,17 @@ export function PriceChart({
     const timeframeChanged = prevTimeframeRef.current !== selectedTimeframe;
     const isInitialLoad = initialLoadRef.current;
     
-    if (isInitialLoad || assetChanged || timeframeChanged) {
+    // Always fit content when data changes significantly or on initial load
+    if (isInitialLoad || assetChanged || timeframeChanged || sortedCandles.length > 1) {
+      // Use multiple frames to ensure DOM is ready
       requestAnimationFrame(() => {
-        chartRef.current?.timeScale().fitContent();
+        requestAnimationFrame(() => {
+          if (chartRef.current) {
+            chartRef.current.timeScale().fitContent();
+            // Scroll to show the most recent candles
+            chartRef.current.timeScale().scrollToRealTime();
+          }
+        });
       });
       initialLoadRef.current = false;
       prevAssetRef.current = selectedAsset;
