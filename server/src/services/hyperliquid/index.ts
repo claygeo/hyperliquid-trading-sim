@@ -17,14 +17,95 @@ const TIMEFRAME_MS: Record<string, number> = {
   '1d': 24 * 60 * 60 * 1000,
 };
 
-// Cache TTL for historical candles
+// Map our timeframes to Binance intervals
+const BINANCE_INTERVALS: Record<string, string> = {
+  '1m': '1m',
+  '5m': '5m',
+  '15m': '15m',
+  '1h': '1h',
+  '4h': '4h',
+  '1d': '1d',
+};
+
+// Map asset symbols to Binance trading pairs
+const BINANCE_SYMBOLS: Record<string, string> = {
+  BTC: 'BTCUSDT',
+  ETH: 'ETHUSDT',
+  SOL: 'SOLUSDT',
+  DOGE: 'DOGEUSDT',
+  XRP: 'XRPUSDT',
+  ADA: 'ADAUSDT',
+  AVAX: 'AVAXUSDT',
+  LINK: 'LINKUSDT',
+  DOT: 'DOTUSDT',
+  MATIC: 'MATICUSDT',
+  UNI: 'UNIUSDT',
+  ATOM: 'ATOMUSDT',
+  LTC: 'LTCUSDT',
+  ARB: 'ARBUSDT',
+  OP: 'OPUSDT',
+  SUI: 'SUIUSDT',
+  APT: 'APTUSDT',
+  NEAR: 'NEARUSDT',
+  INJ: 'INJUSDT',
+  FTM: 'FTMUSDT',
+  AAVE: 'AAVEUSDT',
+  MKR: 'MKRUSDT',
+  SNX: 'SNXUSDT',
+  CRV: 'CRVUSDT',
+  PEPE: 'PEPEUSDT',
+  WIF: 'WIFUSDT',
+  HYPE: 'HYPEUSDT',
+  TIA: 'TIAUSDT',
+  SEI: 'SEIUSDT',
+  JUP: 'JUPUSDT',
+  RENDER: 'RENDERUSDT',
+  FET: 'FETUSDT',
+  PENDLE: 'PENDLEUSDT',
+  STX: 'STXUSDT',
+  IMX: 'IMXUSDT',
+  WLD: 'WLDUSDT',
+  RUNE: 'RUNEUSDT',
+  ENS: 'ENSUSDT',
+  ONDO: 'ONDOUSDT',
+  FIL: 'FILUSDT',
+  GALA: 'GALAUSDT',
+  SAND: 'SANDUSDT',
+  MANA: 'MANAUSDT',
+  AXS: 'AXSUSDT',
+  DYDX: 'DYDXUSDT',
+  GMX: 'GMXUSDT',
+  LDO: 'LDOUSDT',
+  ENA: 'ENAUSDT',
+  STRK: 'STRKUSDT',
+  BLUR: 'BLURUSDT',
+  ORDI: 'ORDIUSDT',
+  BONK: 'BONKUSDT',
+  FLOKI: 'FLOKIUSDT',
+  SHIB: 'SHIBUSDT',
+  BNB: 'BNBUSDT',
+  TRX: 'TRXUSDT',
+  TON: 'TONUSDT',
+  XLM: 'XLMUSDT',
+  ALGO: 'ALGOUSDT',
+  VET: 'VETUSDT',
+  ICP: 'ICPUSDT',
+  HBAR: 'HBARUSDT',
+  ETC: 'ETCUSDT',
+  BCH: 'BCHUSDT',
+  XMR: 'XMRUSDT',
+  ZEC: 'ZECUSDT',
+  TRUMP: 'TRUMPUSDT',
+};
+
+// Cache TTL for historical candles - longer for reliability
 const CANDLE_CACHE_TTL: Record<string, number> = {
-  '1m': 30 * 1000,
-  '5m': 60 * 1000,
-  '15m': 2 * 60 * 1000,
-  '1h': 5 * 60 * 1000,
-  '4h': 10 * 60 * 1000,
-  '1d': 30 * 60 * 1000,
+  '1m': 45 * 1000,      // 45 seconds
+  '5m': 2 * 60 * 1000,  // 2 minutes
+  '15m': 5 * 60 * 1000, // 5 minutes
+  '1h': 15 * 60 * 1000, // 15 minutes
+  '4h': 30 * 60 * 1000, // 30 minutes
+  '1d': 60 * 60 * 1000, // 1 hour
 };
 
 interface CandleCache {
@@ -273,8 +354,64 @@ export class HyperliquidService {
     logger.info(`Subscribed to ${asset} orderbook`);
   }
 
-  // Fetch candles from Hyperliquid REST API
+  // Fetch candles from Binance REST API (more reliable than Hyperliquid)
   private async fetchCandlesFromREST(asset: string, timeframe: string, limit: number): Promise<Candle[]> {
+    const binanceSymbol = BINANCE_SYMBOLS[asset];
+    const binanceInterval = BINANCE_INTERVALS[timeframe] || '1h';
+    
+    // If no Binance mapping, try Hyperliquid as fallback
+    if (!binanceSymbol) {
+      logger.warn(`No Binance mapping for ${asset}, trying Hyperliquid`);
+      return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${Math.min(limit, 1000)}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Binance API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('Invalid or empty response from Binance');
+      }
+
+      // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
+      const candles: Candle[] = data.map((c: any[]) => ({
+        time: c[0], // openTime in ms
+        open: parseFloat(c[1]),
+        high: parseFloat(c[2]),
+        low: parseFloat(c[3]),
+        close: parseFloat(c[4]),
+        volume: parseFloat(c[5]),
+      }));
+
+      candles.sort((a, b) => a.time - b.time);
+      
+      logger.info(`Fetched ${candles.length} candles from Binance for ${asset} (${binanceSymbol}) ${timeframe}`);
+      return candles;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      logger.warn(`Binance fetch failed for ${asset}, trying Hyperliquid: ${error}`);
+      // Fallback to Hyperliquid if Binance fails
+      return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
+    }
+  }
+
+  // Fallback to Hyperliquid REST API
+  private async fetchCandlesFromHyperliquid(asset: string, timeframe: string, limit: number): Promise<Candle[]> {
     const now = Date.now();
     const intervalMs = TIMEFRAME_MS[timeframe] || TIMEFRAME_MS['1h'];
     const startTime = now - (limit * intervalMs);
@@ -320,6 +457,7 @@ export class HyperliquidService {
       }));
 
       candles.sort((a, b) => a.time - b.time);
+      logger.info(`Fetched ${candles.length} candles from Hyperliquid for ${asset} ${timeframe}`);
       return candles;
     } catch (error) {
       clearTimeout(timeoutId);
@@ -327,24 +465,29 @@ export class HyperliquidService {
     }
   }
 
-  // Generate fallback candles
+  // Generate fallback candles using REAL WebSocket price
   private generateFallbackCandles(asset: string, timeframe: string, limit: number): Candle[] {
+    // Use real WebSocket price if available, otherwise estimate
     const basePrice = this.prices.get(asset) || this.getEstimatedPrice(asset);
     const candles: Candle[] = [];
     const now = Date.now();
     const intervalMs = TIMEFRAME_MS[timeframe] || TIMEFRAME_MS['1h'];
 
-    let price = basePrice * (0.98 + Math.random() * 0.04);
+    // Start from a price slightly below current to create realistic trend
+    let price = basePrice * (0.97 + Math.random() * 0.02);
 
     for (let i = limit - 1; i >= 0; i--) {
       const time = now - i * intervalMs;
-      const volatility = basePrice * 0.002;
+      // Smaller volatility for more realistic chart
+      const volatility = basePrice * 0.001;
 
       const open = price;
-      const change = (Math.random() - 0.48) * volatility;
+      // Slight upward bias to end near current price
+      const bias = (i < 10) ? 0.0001 : 0;
+      const change = (Math.random() - 0.48 + bias) * volatility;
       const close = open + change;
-      const high = Math.max(open, close) + Math.random() * volatility * 0.5;
-      const low = Math.min(open, close) - Math.random() * volatility * 0.5;
+      const high = Math.max(open, close) + Math.random() * volatility * 0.3;
+      const low = Math.min(open, close) - Math.random() * volatility * 0.3;
       const volume = Math.random() * 1000000 + 10000;
 
       candles.push({ time, open, high, low, close, volume });
