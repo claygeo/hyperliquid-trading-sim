@@ -17,18 +17,18 @@ const TIMEFRAME_MS: Record<string, number> = {
   '1d': 24 * 60 * 60 * 1000,
 };
 
-// Map our timeframes to Binance intervals
-const BINANCE_INTERVALS: Record<string, string> = {
-  '1m': '1m',
-  '5m': '5m',
-  '15m': '15m',
-  '1h': '1h',
-  '4h': '4h',
-  '1d': '1d',
+// Map our timeframes to Bybit intervals
+const BYBIT_INTERVALS: Record<string, string> = {
+  '1m': '1',
+  '5m': '5',
+  '15m': '15',
+  '1h': '60',
+  '4h': '240',
+  '1d': 'D',
 };
 
-// Map asset symbols to Binance trading pairs
-const BINANCE_SYMBOLS: Record<string, string> = {
+// Map asset symbols to Bybit trading pairs (linear perpetuals)
+const BYBIT_SYMBOLS: Record<string, string> = {
   BTC: 'BTCUSDT',
   ETH: 'ETHUSDT',
   SOL: 'SOLUSDT',
@@ -88,14 +88,24 @@ const BINANCE_SYMBOLS: Record<string, string> = {
   TON: 'TONUSDT',
   XLM: 'XLMUSDT',
   ALGO: 'ALGOUSDT',
-  VET: 'VETUSDT',
   ICP: 'ICPUSDT',
   HBAR: 'HBARUSDT',
   ETC: 'ETCUSDT',
   BCH: 'BCHUSDT',
-  XMR: 'XMRUSDT',
   ZEC: 'ZECUSDT',
   TRUMP: 'TRUMPUSDT',
+  TAO: 'TAOUSDT',
+  EIGEN: 'EIGENUSDT',
+  AR: 'ARUSDT',
+  GRT: 'GRTUSDT',
+  PYTH: 'PYTHUSDT',
+  JTO: 'JTOUSDT',
+  MEME: 'MEMEUSDT',
+  BOME: 'BOMEUSDT',
+  BONK: '1000BONKUSDT',
+  SHIB: '1000SHIBUSDT',
+  PEPE: '1000PEPEUSDT',
+  FLOKI: '1000FLOKIUSDT',
 };
 
 // Cache TTL for historical candles - longer for reliability
@@ -354,14 +364,14 @@ export class HyperliquidService {
     logger.info(`Subscribed to ${asset} orderbook`);
   }
 
-  // Fetch candles from Binance REST API (more reliable than Hyperliquid)
+  // Fetch candles from Bybit REST API (globally accessible, no geo-restrictions)
   private async fetchCandlesFromREST(asset: string, timeframe: string, limit: number): Promise<Candle[]> {
-    const binanceSymbol = BINANCE_SYMBOLS[asset];
-    const binanceInterval = BINANCE_INTERVALS[timeframe] || '1h';
+    const bybitSymbol = BYBIT_SYMBOLS[asset];
+    const bybitInterval = BYBIT_INTERVALS[timeframe] || '60';
     
-    // If no Binance mapping, try Hyperliquid as fallback
-    if (!binanceSymbol) {
-      logger.warn(`No Binance mapping for ${asset}, trying Hyperliquid`);
+    // If no Bybit mapping, try Hyperliquid as fallback
+    if (!bybitSymbol) {
+      logger.warn(`No Bybit mapping for ${asset}, trying Hyperliquid`);
       return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
     }
 
@@ -369,7 +379,8 @@ export class HyperliquidService {
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${Math.min(limit, 1000)}`;
+      // Bybit v5 API - publicly accessible worldwide
+      const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${bybitSymbol}&interval=${bybitInterval}&limit=${Math.min(limit, 1000)}`;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -379,18 +390,19 @@ export class HyperliquidService {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Binance API error: ${response.status}`);
+        throw new Error(`Bybit API error: ${response.status}`);
       }
 
       const data = await response.json();
 
-      if (!Array.isArray(data) || data.length === 0) {
-        throw new Error('Invalid or empty response from Binance');
+      if (data.retCode !== 0 || !data.result?.list || data.result.list.length === 0) {
+        throw new Error(`Bybit API error: ${data.retMsg || 'Empty response'}`);
       }
 
-      // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
-      const candles: Candle[] = data.map((c: any[]) => ({
-        time: c[0], // openTime in ms
+      // Bybit kline format: [startTime, open, high, low, close, volume, turnover]
+      // Note: Bybit returns data in reverse chronological order (newest first)
+      const candles: Candle[] = data.result.list.map((c: string[]) => ({
+        time: parseInt(c[0]), // startTime in ms
         open: parseFloat(c[1]),
         high: parseFloat(c[2]),
         low: parseFloat(c[3]),
@@ -398,14 +410,15 @@ export class HyperliquidService {
         volume: parseFloat(c[5]),
       }));
 
+      // Sort chronologically (oldest first) since Bybit returns newest first
       candles.sort((a, b) => a.time - b.time);
       
-      logger.info(`Fetched ${candles.length} candles from Binance for ${asset} (${binanceSymbol}) ${timeframe}`);
+      logger.info(`Fetched ${candles.length} candles from Bybit for ${asset} (${bybitSymbol}) ${timeframe}`);
       return candles;
     } catch (error) {
       clearTimeout(timeoutId);
-      logger.warn(`Binance fetch failed for ${asset}, trying Hyperliquid: ${error}`);
-      // Fallback to Hyperliquid if Binance fails
+      logger.warn(`Bybit fetch failed for ${asset}, trying Hyperliquid: ${error}`);
+      // Fallback to Hyperliquid if Bybit fails
       return this.fetchCandlesFromHyperliquid(asset, timeframe, limit);
     }
   }
