@@ -149,9 +149,23 @@ export class HyperliquidService {
     const cached = this.candleCache.get(cacheKey);
     const cacheTTL = CANDLE_CACHE_TTL[timeframe] || CANDLE_CACHE_TTL['1h'];
     
-    // Return from cache if fresh
+    // Validate cached data - ensure it has the correct asset
     if (cached && Date.now() - cached.timestamp < cacheTTL && cached.candles.length > 0) {
-      return cached.candles.slice(-limit);
+      // Verify cached candles have reasonable prices for this asset
+      const currentPrice = this.prices.get(asset);
+      if (currentPrice && cached.candles.length > 0) {
+        const lastCachedPrice = cached.candles[cached.candles.length - 1].close;
+        const priceDiff = Math.abs(currentPrice - lastCachedPrice) / currentPrice;
+        // If cached price is more than 30% off current price, invalidate cache
+        if (priceDiff > 0.3) {
+          logger.info(`Cache invalidated for ${asset}: price drift too large (${priceDiff.toFixed(2)})`);
+          this.candleCache.delete(cacheKey);
+        } else {
+          return cached.candles.slice(-limit);
+        }
+      } else {
+        return cached.candles.slice(-limit);
+      }
     }
 
     // Check if there's already a pending fetch
@@ -170,6 +184,17 @@ export class HyperliquidService {
 
     try {
       const candles = await fetchPromise;
+      
+      // Validate fetched candles
+      if (candles.length > 0) {
+        const avgPrice = candles.reduce((sum, c) => sum + c.close, 0) / candles.length;
+        
+        // Sanity check: compare with known price if available
+        const currentPrice = this.prices.get(asset);
+        if (currentPrice && Math.abs(currentPrice - avgPrice) / currentPrice > 0.5) {
+          logger.warn(`Fetched candles for ${asset} have unexpected price range: avg=${avgPrice}, current=${currentPrice}`);
+        }
+      }
       
       // Cache the results
       this.candleCache.set(cacheKey, {
@@ -331,11 +356,14 @@ export class HyperliquidService {
   }
 
   private getEstimatedPrice(asset: string): number {
+    // Updated estimates closer to Feb 2026 market values
+    // These are used as fallback only when real data isn't available
     const estimates: Record<string, number> = {
-      BTC: 105000, ETH: 3300, SOL: 240, DOGE: 0.35, AVAX: 35,
-      LINK: 22, ARB: 0.80, OP: 1.8, SUI: 4.5, PEPE: 0.000018,
-      WIF: 1.5, MATIC: 0.45, INJ: 22, APT: 8, NEAR: 5,
-      AAVE: 280, UNI: 12, MKR: 1600, SNX: 2.5, CRV: 0.8,
+      BTC: 78000, ETH: 2800, SOL: 180, DOGE: 0.25, AVAX: 28,
+      LINK: 18, ARB: 0.70, OP: 1.5, SUI: 3.5, PEPE: 0.000012,
+      WIF: 1.2, MATIC: 0.38, INJ: 18, APT: 7, NEAR: 4.5,
+      AAVE: 220, UNI: 10, MKR: 1400, SNX: 2.0, CRV: 0.6,
+      XRP: 1.65, ADA: 0.85, DOT: 6, ATOM: 8, FTM: 0.7,
     };
     return estimates[asset] || 100;
   }

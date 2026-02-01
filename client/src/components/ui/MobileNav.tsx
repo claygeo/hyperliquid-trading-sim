@@ -25,7 +25,7 @@ export function MobileNav() {
             onClick={() => navigate(tab.path)}
             className={cn(
               'py-3 px-6 text-sm font-medium touch-manipulation transition-colors',
-              isActive(tab.path) ? 'text-[#3dd9a4]' : 'text-gray-500'
+              isActive(tab.path) ? 'text-[#00d4ff]' : 'text-gray-500'
             )}
           >
             {tab.label}

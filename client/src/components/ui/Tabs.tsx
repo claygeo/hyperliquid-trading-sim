@@ -22,7 +22,7 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
           className={cn(
             'px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 touch-manipulation',
             activeTab === tab.value
-              ? 'bg-[#3dd9a4] text-black shadow-sm'
+              ? 'bg-[#00d4ff] text-black shadow-sm'
               : 'text-gray-400 hover:text-white'
           )}
         >

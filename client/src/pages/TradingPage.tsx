@@ -188,7 +188,7 @@ export function TradingPage() {
               placeholder="Search markets..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-[#1a1d21] border border-[#1e2126] rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-[#3dd9a4] text-sm"
+              className="flex-1 bg-[#1a1d21] border border-[#1e2126] rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-[#00d4ff] text-sm"
               autoFocus
             />
           </div>
@@ -201,7 +201,7 @@ export function TradingPage() {
               onClick={() => handleAssetSelect(asset.symbol)}
               className={cn(
                 'w-full flex items-center justify-between px-4 py-3 border-b border-[#1e2126]/50 transition-colors touch-manipulation',
-                asset.symbol === selectedAsset ? 'bg-[#3dd9a4]/10' : 'active:bg-[#1a1d21]'
+                asset.symbol === selectedAsset ? 'bg-[#00d4ff]/10' : 'active:bg-[#1a1d21]'
               )}
             >
               <div className="flex items-center gap-3">
@@ -209,7 +209,7 @@ export function TradingPage() {
                 <span className="text-gray-500 text-sm">PERP</span>
               </div>
               {asset.symbol === selectedAsset && (
-                <svg className="w-5 h-5 text-[#3dd9a4]" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-[#00d4ff]" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
               )}
@@ -244,11 +244,11 @@ export function TradingPage() {
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="text-left">
               <div className="text-gray-500 mb-0.5">Coin</div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-baseline gap-1">
                 <span className="text-white font-medium">{position.asset}</span>
                 <span className={cn(
-                  'text-[10px]',
-                  isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
+                  'text-[10px] leading-none',
+                  isLong ? 'text-[#00d4ff]' : 'text-[#f6465d]'
                 )}>
                   {position.leverage}x
                 </span>
@@ -319,7 +319,7 @@ export function TradingPage() {
               <button
                 onClick={() => handleClosePosition(position.id, 'limit')}
                 disabled={isClosing}
-                className="text-[#3dd9a4] text-sm font-medium touch-manipulation"
+                className="text-[#00d4ff] text-sm font-medium touch-manipulation"
               >
                 Limit Close
               </button>
@@ -415,7 +415,7 @@ export function TradingPage() {
               className={cn(
                 'flex-1 py-2.5 text-sm font-medium transition-colors touch-manipulation',
                 mobileTab === tab.id 
-                  ? 'text-white border-b-2 border-[#3dd9a4]' 
+                  ? 'text-white border-b-2 border-[#00d4ff]' 
                   : 'text-gray-500'
               )}
             >
@@ -470,7 +470,7 @@ export function TradingPage() {
                     <div className="flex flex-col items-center text-gray-500 text-sm">
                       <p>No open positions</p>
                       {!isAuthenticated && (
-                        <Link to="/login" className="text-[#3dd9a4] mt-1 touch-manipulation">Login to trade</Link>
+                        <Link to="/login" className="text-[#00d4ff] mt-1 touch-manipulation">Login to trade</Link>
                       )}
                     </div>
                   ) : (

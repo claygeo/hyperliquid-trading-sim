@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Clean trading theme - black + cyan + green/red
+        // Clean trading theme - black + cyan/teal + green/red
         bg: {
           primary: '#000000',
           secondary: '#0a0a0f',
@@ -16,6 +16,7 @@ export default {
         },
         accent: {
           cyan: '#00d4ff',
+          teal: '#00d4ff',
           green: '#0ecb81',
           red: '#f6465d',
           yellow: '#f0b90b',

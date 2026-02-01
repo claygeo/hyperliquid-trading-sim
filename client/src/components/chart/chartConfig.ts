@@ -12,17 +12,17 @@ export function getMinBarSpacing(timeframe: string): number {
   }
 }
 
-// Base chart configuration - darker theme
+// Base chart configuration - Hyperliquid-style dark theme
 export const chartConfig: DeepPartial<ChartOptions> = {
   layout: {
-    background: { type: ColorType.Solid, color: '#000000' },
+    background: { type: ColorType.Solid, color: '#0d0f11' },
     textColor: '#848e9c',
-    fontFamily: "'JetBrains Mono', monospace",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontSize: 11,
   },
   grid: {
-    vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
-    horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
+    vertLines: { color: 'rgba(42, 46, 57, 0.3)' },
+    horzLines: { color: 'rgba(42, 46, 57, 0.3)' },
   },
   crosshair: {
     mode: 1,
@@ -30,14 +30,14 @@ export const chartConfig: DeepPartial<ChartOptions> = {
       color: '#758696',
       width: 1,
       style: 2,
-      labelBackgroundColor: '#2a2e37',
+      labelBackgroundColor: '#1e2126',
       labelVisible: true,
     },
     horzLine: {
       color: '#758696',
       width: 1,
       style: 2,
-      labelBackgroundColor: '#2a2e37',
+      labelBackgroundColor: '#1e2126',
       labelVisible: true,
     },
   },
@@ -45,10 +45,12 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     borderColor: 'rgba(42, 46, 57, 0.5)',
     scaleMargins: {
       top: 0.1,
-      bottom: 0.2, // Leave room for volume
+      bottom: 0.2,
     },
     autoScale: true,
     alignLabels: true,
+    borderVisible: false,
+    entireTextOnly: true,
   },
   timeScale: {
     borderColor: 'rgba(42, 46, 57, 0.5)',
@@ -61,9 +63,15 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     fixRightEdge: false,
     lockVisibleTimeRangeOnResize: true,
     rightBarStaysOnScroll: true,
-    borderVisible: true,
+    borderVisible: false,
     visible: true,
     ticksVisible: true,
+    tickMarkFormatter: (time: number) => {
+      const date = new Date(time * 1000);
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    },
   },
   handleScroll: {
     mouseWheel: true,
@@ -87,6 +95,19 @@ export const chartConfig: DeepPartial<ChartOptions> = {
     touch: true,
     mouse: true,
   },
+  localization: {
+    priceFormatter: (price: number) => {
+      if (price >= 1000) {
+        return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      } else if (price >= 1) {
+        return price.toFixed(4);
+      } else if (price >= 0.0001) {
+        return price.toFixed(6);
+      } else {
+        return price.toFixed(8);
+      }
+    },
+  },
 };
 
 // Mobile-specific overrides
@@ -100,10 +121,12 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
     borderColor: 'rgba(42, 46, 57, 0.5)',
     scaleMargins: {
       top: 0.05,
-      bottom: 0.15, // Leave room for volume at bottom
+      bottom: 0.15,
     },
     autoScale: true,
     alignLabels: true,
+    borderVisible: false,
+    entireTextOnly: true,
   },
   timeScale: {
     ...chartConfig.timeScale,
@@ -111,7 +134,7 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
     minBarSpacing: 0.5,
     rightOffset: 3,
     visible: true,
-    borderVisible: true,
+    borderVisible: false,
     ticksVisible: true,
   },
   handleScroll: {
@@ -134,7 +157,7 @@ export const mobileChartConfig: DeepPartial<ChartOptions> = {
   },
 };
 
-// Candlestick series configuration - Binance colors
+// Candlestick series configuration - Hyperliquid colors
 export const candlestickConfig = {
   upColor: '#0ecb81',
   downColor: '#f6465d',

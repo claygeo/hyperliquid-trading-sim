@@ -33,6 +33,19 @@ const isTouchDevice = () => {
 
 const DOUBLE_TAP_DELAY = 300;
 
+// Helper to format price based on asset
+const formatPriceForAsset = (price: number): string => {
+  if (price >= 1000) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } else if (price >= 1) {
+    return price.toFixed(4);
+  } else if (price >= 0.0001) {
+    return price.toFixed(6);
+  } else {
+    return price.toFixed(8);
+  }
+};
+
 export function PriceChart({
   candles,
   selectedAsset,
@@ -71,8 +84,19 @@ export function PriceChart({
     tapCount: 0,
   });
 
+  // Filter and validate candles - ensure they have reasonable price data
   const sortedCandles = useMemo(() => {
-    return [...candles].sort((a, b) => a.time - b.time);
+    if (!candles || candles.length === 0) return [];
+    
+    // Sort by time
+    const sorted = [...candles].sort((a, b) => a.time - b.time);
+    
+    // Filter out any invalid candles (where prices are 0 or undefined)
+    const validCandles = sorted.filter(c => 
+      c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0
+    );
+    
+    return validCandles;
   }, [candles]);
 
   useEffect(() => {
@@ -143,23 +167,28 @@ export function PriceChart({
       },
     });
 
-    // Add candlestick series
+    // Add candlestick series with proper price formatting
     const candleSeries = chart.addCandlestickSeries({
       ...candlestickConfig,
       priceScaleId: 'right',
+      priceFormat: {
+        type: 'price',
+        precision: 2,
+        minMove: 0.01,
+      },
     });
 
-    // Add volume histogram series - smaller on mobile
+    // Add volume histogram series
     const volumeSeries = chart.addHistogramSeries({
       ...volumeConfig,
       priceScaleId: 'volume',
       priceFormat: { type: 'volume' },
     });
 
-    // Configure volume price scale - visible volume bars
+    // Configure volume price scale - compact view
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: compact ? 0.80 : 0.75, // More room for volume
+        top: compact ? 0.85 : 0.80,
         bottom: 0,
       },
       borderVisible: false,
@@ -288,7 +317,7 @@ export function PriceChart({
     }
   }, [selectedTimeframe]);
 
-  // Update chart data with volume
+  // Update chart data with volume - with improved price scale handling
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || sortedCandles.length === 0) return;
 
@@ -303,11 +332,36 @@ export function PriceChart({
     const volumeData: HistogramData[] = sortedCandles.map((c) => ({
       time: Math.floor(c.time / 1000) as Time,
       value: c.volume,
-      color: c.close >= c.open ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 51, 102, 0.3)',
+      color: c.close >= c.open ? 'rgba(14, 203, 129, 0.4)' : 'rgba(246, 70, 93, 0.4)',
     }));
 
+    // Set data
     candleSeriesRef.current.setData(candleData);
     volumeSeriesRef.current.setData(volumeData);
+
+    // Configure price precision based on asset price range
+    const avgPrice = sortedCandles.reduce((acc, c) => acc + c.close, 0) / sortedCandles.length;
+    let precision = 2;
+    let minMove = 0.01;
+    
+    if (avgPrice < 0.01) {
+      precision = 8;
+      minMove = 0.00000001;
+    } else if (avgPrice < 1) {
+      precision = 6;
+      minMove = 0.000001;
+    } else if (avgPrice < 100) {
+      precision = 4;
+      minMove = 0.0001;
+    }
+    
+    candleSeriesRef.current.applyOptions({
+      priceFormat: {
+        type: 'price',
+        precision,
+        minMove,
+      },
+    });
 
     const assetChanged = prevAssetRef.current !== selectedAsset;
     const timeframeChanged = prevTimeframeRef.current !== selectedTimeframe;
@@ -329,6 +383,7 @@ export function PriceChart({
 
     const lastCandle = sortedCandles[sortedCandles.length - 1];
     
+    // Validate price is within reasonable range (within 20% of last close)
     const priceDiff = Math.abs(currentPrice - lastCandle.close) / lastCandle.close;
     if (priceDiff > 0.2) return;
     
@@ -343,7 +398,7 @@ export function PriceChart({
     volumeSeriesRef.current.update({
       time: Math.floor(lastCandle.time / 1000) as Time,
       value: lastCandle.volume,
-      color: currentPrice >= lastCandle.open ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 51, 102, 0.3)',
+      color: currentPrice >= lastCandle.open ? 'rgba(14, 203, 129, 0.4)' : 'rgba(246, 70, 93, 0.4)',
     });
   }, [sortedCandles, currentPrice]);
 
@@ -369,11 +424,11 @@ export function PriceChart({
 
   return (
     <div 
-      className="relative h-full w-full bg-[#0d0f11] rounded-lg border border-border overflow-hidden"
+      className="relative h-full w-full bg-[#0d0f11] rounded-lg border border-[#1e2126] overflow-hidden"
       onDoubleClick={handleDoubleClick}
     >
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-[#0d0f11]/95 backdrop-blur-sm border-b border-border">
+      <div className="absolute top-0 left-0 right-0 z-10 bg-[#0d0f11]/95 backdrop-blur-sm border-b border-[#1e2126]">
         {compact ? (
           /* Compact: just timeframe buttons, minimal */
           <div className="px-2 py-1 flex items-center gap-1">
@@ -396,7 +451,7 @@ export function PriceChart({
                 </h2>
                 {displayPrice > 0 && (
                   <span className={`text-lg md:text-xl font-mono font-bold tabular-nums ${priceColor}`}>
-                    ${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${formatPriceForAsset(displayPrice)}
                   </span>
                 )}
               </div>
@@ -434,7 +489,7 @@ export function PriceChart({
 
       {/* Loading overlay */}
       {isLoading && sortedCandles.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-[#0d0f11]/80 backdrop-blur-sm z-20">
           <div className="flex flex-col items-center gap-3">
             <Spinner size="lg" />
             <span className="text-sm text-text-muted">Loading chart...</span>
@@ -454,7 +509,7 @@ export function PriceChart({
 
       {/* Mobile helper text */}
       {isMobile && showHelperText && sortedCandles.length > 0 && !isLoading && !compact && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-bg-primary/80 px-3 py-1 rounded-full backdrop-blur-sm">
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-text-muted/70 pointer-events-none bg-[#0d0f11]/80 px-3 py-1 rounded-full backdrop-blur-sm">
           Pinch to zoom • Double-tap to reset
         </div>
       )}
