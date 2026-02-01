@@ -18,10 +18,12 @@ import { cn, formatPrice, formatSize, formatUSD, formatPercent } from '../lib/ut
 import { AnimatedNumber } from '../components/ui/AnimatedNumber';
 import type { Position } from '../types/trading';
 
-type MobileTab = 'chart' | 'orderbook';
+type MobileView = 'chart' | 'trade';
+type TradeTab = 'orderbook' | 'trades';
 
 export function TradingPage() {
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chart');
+  const [mobileView, setMobileView] = useState<MobileView>('chart');
+  const [tradeTab, setTradeTab] = useState<TradeTab>('orderbook');
   const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(null);
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
@@ -81,12 +83,10 @@ export function TradingPage() {
     }
   }, [isConnected, selectedAsset, isAuthenticated]);
 
-  // Initial fetch on mount
   useEffect(() => {
     fetchCandles(selectedAsset, selectedTimeframe);
-  }, []); // Only on mount
+  }, []);
 
-  // Fetch account data when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       fetchPositions();
@@ -94,9 +94,6 @@ export function TradingPage() {
       fetchStats();
     }
   }, [isAuthenticated]);
-
-  // Note: subsequent fetches are handled by setSelectedAsset and setSelectedTimeframe
-  // The deduplication in useMarketData prevents duplicate requests
 
   const handlePlaceOrder = async (order: Parameters<typeof placeOrder>[0]) => {
     if (!isAuthenticated) {
@@ -163,7 +160,6 @@ export function TradingPage() {
 
   const handleOrderbookPriceClick = useCallback((price: number) => {
     setLimitPriceFromOrderbook(price);
-    setMobileTab('orderbook');
   }, []);
 
   const filteredAssets = getFilteredAssets();
@@ -220,7 +216,7 @@ export function TradingPage() {
     </div>
   );
 
-  // Expandable Position Card
+  // Position Card Component
   const PositionCard = ({ position }: { position: Position }) => {
     const isExpanded = expandedPositionId === position.id;
     const isClosing = closingPositionId === position.id;
@@ -287,50 +283,38 @@ export function TradingPage() {
         </button>
 
         {isExpanded && (
-          <div className="px-3 pb-3 space-y-3 border-t border-[#1e2126]/30 pt-3">
-            <div className="grid grid-cols-3 gap-y-3 gap-x-2 text-xs">
+          <div className="px-3 pb-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
                 <div className="text-gray-500">Entry Price</div>
                 <div className="text-white font-mono">{formatPrice(position.entryPrice)}</div>
               </div>
               <div>
                 <div className="text-gray-500">Mark Price</div>
-                <div className="text-white font-mono">{formatPrice(position.currentPrice)}</div>
+                <div className="text-white font-mono">{formatPrice(position.currentPrice || currentPrice)}</div>
               </div>
               <div>
                 <div className="text-gray-500">Liq. Price</div>
-                <div className="text-[#f0b90b] font-mono">{formatPrice(liqPrice)}</div>
+                <div className="text-[#f6465d] font-mono">{formatPrice(liqPrice)}</div>
               </div>
-              <div>
-                <div className="text-gray-500">Position Value</div>
-                <div className="text-white font-mono">{formatUSD(position.size * position.currentPrice)}</div>
-              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <div className="text-gray-500">Margin</div>
                 <div className="text-white font-mono">{formatUSD(margin)}</div>
               </div>
               <div>
-                <div className="text-gray-500">TP/SL</div>
-                <div className="text-gray-400">-- / --</div>
+                <div className="text-gray-500">Notional</div>
+                <div className="text-white font-mono">{formatUSD(position.size * position.entryPrice)}</div>
               </div>
             </div>
-
-            <div className="flex gap-4 pt-2">
-              <button
-                onClick={() => handleClosePosition(position.id, 'limit')}
-                disabled={isClosing}
-                className="text-[#00d4ff] text-sm font-medium touch-manipulation"
-              >
-                Limit Close
-              </button>
-              <button
-                onClick={() => handleClosePosition(position.id, 'market')}
-                disabled={isClosing}
-                className="text-[#f6465d] text-sm font-medium touch-manipulation"
-              >
-                Market Close
-              </button>
-            </div>
+            <button
+              onClick={() => handleClosePosition(position.id, 'market')}
+              disabled={isClosing}
+              className="w-full py-2.5 bg-[#f6465d] text-white rounded-lg text-sm font-medium touch-manipulation disabled:opacity-50"
+            >
+              {isClosing ? 'Closing...' : 'Market Close'}
+            </button>
           </div>
         )}
       </div>
@@ -339,33 +323,41 @@ export function TradingPage() {
 
   // Desktop Asset Selector
   const DesktopAssetSelector = () => (
-    <div className="flex items-center gap-2 bg-[#0d0f11] rounded-lg p-2 border border-[#1e2126] overflow-x-auto">
-      <button
-        onClick={() => setShowAssetSearch(true)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1d21] rounded-lg hover:bg-[#22262c] transition-colors"
-      >
-        <span className="text-white font-medium">{selectedAsset}</span>
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {['BTC', 'ETH', 'SOL', 'DOGE', 'PEPE'].filter(s => s !== selectedAsset).slice(0, 4).map((symbol) => (
-        <button
-          key={symbol}
-          onClick={() => setSelectedAsset(symbol)}
-          className="px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#1a1d21] rounded-lg transition-colors"
+    <div className="hidden md:flex items-center justify-between px-4 py-2 bg-[#0d0f11] border border-[#1e2126] rounded-lg">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={() => setShowAssetSearch(true)}
+          className="flex items-center gap-2 hover:bg-[#1a1d21] px-2 py-1 rounded transition-colors"
         >
-          {symbol}
+          <span className="text-white font-semibold text-lg">{selectedAsset}-USDC</span>
+          <span className="text-xs px-1.5 py-0.5 bg-[#1a1d21] rounded text-gray-400">PERP</span>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
-      ))}
-
-      <div className="ml-auto flex items-center gap-2">
+        <div className={cn(
+          'text-xl font-mono font-semibold',
+          currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
+            ? 'text-[#3dd9a4]' 
+            : 'text-[#f6465d]'
+        )}>
+          {currentPrice > 0 ? formatPrice(currentPrice) : '--'}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Link 
+          to="/leaderboard"
+          className="p-2 text-gray-400 hover:text-[#ffd700] transition-colors"
+          title="Leaderboard"
+        >
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
+          </svg>
+        </Link>
         <div className={cn(
           'w-2 h-2 rounded-full',
           isConnected ? 'bg-[#3dd9a4]' : 'bg-[#f6465d]'
         )} />
-        <span className="text-xs text-gray-500">{isConnected ? 'Live' : 'Offline'}</span>
       </div>
     </div>
   );
@@ -375,8 +367,8 @@ export function TradingPage() {
       {showAssetSearch && <AssetSearchModal />}
 
       {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col h-[100dvh] pb-12">
-        {/* Header */}
+      <div className="md:hidden flex flex-col h-[100dvh] pb-14">
+        {/* Header with trophy icon */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 
             onClick={() => setShowAssetSearch(true)}
@@ -387,15 +379,24 @@ export function TradingPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className={cn(
-              'font-mono font-semibold',
+              'font-sans text-base font-semibold tabular-nums',
               currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
                 ? 'text-[#3dd9a4]' 
                 : 'text-[#f6465d]'
             )}>
               {currentPrice > 0 ? formatPrice(currentPrice) : '--'}
             </span>
+            {/* Trophy icon for leaderboard */}
+            <Link 
+              to="/leaderboard"
+              className="p-1.5 text-gray-400 hover:text-[#ffd700] active:text-[#ffd700] transition-colors touch-manipulation"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
+              </svg>
+            </Link>
             <div className={cn(
               'w-2 h-2 rounded-full',
               isConnected ? 'bg-[#3dd9a4]' : 'bg-[#f6465d]'
@@ -403,32 +404,11 @@ export function TradingPage() {
           </div>
         </div>
 
-        {/* Tab bar: Chart | Order Book */}
-        <div className="flex border-b border-[#1e2126] bg-[#0d0f11]">
-          {[
-            { id: 'chart', label: 'Chart' },
-            { id: 'orderbook', label: 'Order Book' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setMobileTab(tab.id as MobileTab)}
-              className={cn(
-                'flex-1 py-2.5 text-sm font-medium transition-colors touch-manipulation',
-                mobileTab === tab.id 
-                  ? 'text-white border-b-2 border-[#00d4ff]' 
-                  : 'text-gray-500'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Main content */}
+        {/* Main content based on mobile view */}
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          {mobileTab === 'chart' && (
+          {mobileView === 'chart' && (
             <>
-              {/* Chart - expands when no positions */}
+              {/* Chart */}
               <div className="flex-1 min-h-[200px]">
                 <PriceChart
                   candles={currentCandles}
@@ -441,9 +421,8 @@ export function TradingPage() {
                 />
               </div>
 
-              {/* Positions section - dynamic */}
+              {/* Positions section */}
               <div className="flex flex-col border-t border-[#1e2126]">
-                {/* Positions header */}
                 <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
                   <span className="text-sm font-medium text-white">
                     Positions ({openPositions.length})
@@ -461,7 +440,6 @@ export function TradingPage() {
                   )}
                 </div>
 
-                {/* Positions list - scrollable only when needed */}
                 <div className={cn(
                   'overflow-y-auto',
                   openPositions.length === 0 ? 'py-4' : 'max-h-[40vh]'
@@ -483,32 +461,63 @@ export function TradingPage() {
             </>
           )}
           
-          {mobileTab === 'orderbook' && (
-            <div className="h-full flex">
-              <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
-                <Orderbook 
-                  orderbook={orderbook} 
-                  asset={selectedAsset} 
-                  compact 
-                  onPriceClick={handleOrderbookPriceClick}
-                />
+          {mobileView === 'trade' && (
+            <div className="flex flex-col h-full">
+              {/* Trade view tabs: Order Book | Trades */}
+              <div className="flex border-b border-[#1e2126] bg-[#0d0f11] flex-shrink-0">
+                {[
+                  { id: 'orderbook', label: 'Order Book' },
+                  { id: 'trades', label: 'Trades' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setTradeTab(tab.id as TradeTab)}
+                    className={cn(
+                      'flex-1 py-2 text-sm font-medium transition-colors touch-manipulation',
+                      tradeTab === tab.id 
+                        ? 'text-white border-b-2 border-[#00d4ff]' 
+                        : 'text-gray-500'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div className="w-[55%] overflow-hidden">
-                <OrderForm
-                  selectedAsset={selectedAsset}
-                  currentPrice={currentPrice}
-                  availableBalance={account?.availableMargin || 100000}
-                  onPlaceOrder={handlePlaceOrder}
-                  isPlacingOrder={isPlacingOrder}
-                  compact
-                  externalLimitPrice={limitPriceFromOrderbook}
-                />
+
+              {/* Trade content */}
+              <div className="flex-1 flex min-h-0">
+                {/* Left side: Order Book or Trades */}
+                <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
+                  {tradeTab === 'orderbook' ? (
+                    <Orderbook 
+                      orderbook={orderbook} 
+                      asset={selectedAsset} 
+                      compact 
+                      onPriceClick={handleOrderbookPriceClick}
+                    />
+                  ) : (
+                    <RecentTrades trades={trades} asset={selectedAsset} />
+                  )}
+                </div>
+                
+                {/* Right side: Order Form */}
+                <div className="w-[55%] overflow-hidden">
+                  <OrderForm
+                    selectedAsset={selectedAsset}
+                    currentPrice={currentPrice}
+                    availableBalance={account?.availableMargin || 100000}
+                    onPlaceOrder={handlePlaceOrder}
+                    isPlacingOrder={isPlacingOrder}
+                    compact
+                    externalLimitPrice={limitPriceFromOrderbook}
+                  />
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        <MobileNav />
+        <MobileNav activeTab={mobileView} onTabChange={setMobileView} />
       </div>
 
       {/* Desktop Layout */}

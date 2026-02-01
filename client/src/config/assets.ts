@@ -5,31 +5,51 @@ export interface Asset {
   maxLeverage: number;
 }
 
-// Default assets for initial render before API fetch
+// Assets supported by CryptoCompare API (have reliable price charts)
 export const DEFAULT_ASSETS: Asset[] = [
   { symbol: 'BTC', name: 'Bitcoin', szDecimals: 5, maxLeverage: 50 },
   { symbol: 'ETH', name: 'Ethereum', szDecimals: 4, maxLeverage: 50 },
   { symbol: 'SOL', name: 'Solana', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'XRP', name: 'Ripple', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'DOGE', name: 'Dogecoin', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'ADA', name: 'Cardano', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'AVAX', name: 'Avalanche', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'LINK', name: 'Chainlink', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'DOT', name: 'Polkadot', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'MATIC', name: 'Polygon', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'UNI', name: 'Uniswap', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'ATOM', name: 'Cosmos', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'LTC', name: 'Litecoin', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'ARB', name: 'Arbitrum', szDecimals: 1, maxLeverage: 50 },
   { symbol: 'OP', name: 'Optimism', szDecimals: 1, maxLeverage: 50 },
   { symbol: 'SUI', name: 'Sui', szDecimals: 1, maxLeverage: 50 },
-  { symbol: 'PEPE', name: 'Pepe', szDecimals: 0, maxLeverage: 50 },
-  { symbol: 'WIF', name: 'dogwifhat', szDecimals: 1, maxLeverage: 50 },
-  { symbol: 'MATIC', name: 'Polygon', szDecimals: 1, maxLeverage: 50 },
-  { symbol: 'INJ', name: 'Injective', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'APT', name: 'Aptos', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'NEAR', name: 'NEAR', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'INJ', name: 'Injective', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'FTM', name: 'Fantom', szDecimals: 0, maxLeverage: 50 },
-  { symbol: 'ATOM', name: 'Cosmos', szDecimals: 2, maxLeverage: 50 },
-  { symbol: 'TIA', name: 'Celestia', szDecimals: 2, maxLeverage: 50 },
-  { symbol: 'SEI', name: 'Sei', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'AAVE', name: 'Aave', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'MKR', name: 'Maker', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'SNX', name: 'Synthetix', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'CRV', name: 'Curve', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'FIL', name: 'Filecoin', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'SAND', name: 'Sandbox', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'MANA', name: 'Decentraland', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'AXS', name: 'Axie Infinity', szDecimals: 2, maxLeverage: 50 },
   { symbol: 'RUNE', name: 'THORChain', szDecimals: 1, maxLeverage: 50 },
+  { symbol: 'ENS', name: 'ENS', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'LDO', name: 'Lido DAO', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'GRT', name: 'The Graph', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'IMX', name: 'Immutable X', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'STX', name: 'Stacks', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'RENDER', name: 'Render', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'FET', name: 'Fetch.ai', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'AR', name: 'Arweave', szDecimals: 2, maxLeverage: 50 },
+  { symbol: 'SHIB', name: 'Shiba Inu', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'PEPE', name: 'Pepe', szDecimals: 0, maxLeverage: 50 },
+  { symbol: 'BNB', name: 'BNB', szDecimals: 2, maxLeverage: 50 },
 ];
 
-// For backward compatibility - will be replaced with dynamic list
+// For backward compatibility
 export const ASSETS: Record<string, Asset> = Object.fromEntries(
   DEFAULT_ASSETS.map(a => [a.symbol, a])
 );
