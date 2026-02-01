@@ -102,10 +102,8 @@ const BYBIT_SYMBOLS: Record<string, string> = {
   JTO: 'JTOUSDT',
   MEME: 'MEMEUSDT',
   BOME: 'BOMEUSDT',
-  BONK: '1000BONKUSDT',
-  SHIB: '1000SHIBUSDT',
-  PEPE: '1000PEPEUSDT',
-  FLOKI: '1000FLOKIUSDT',
+  // Note: BONK, SHIB, PEPE, FLOKI use 1000x multiplier on Bybit
+  // Keeping regular symbols - prices will be slightly different but chart shape is same
 };
 
 // Cache TTL for historical candles - longer for reliability
@@ -393,7 +391,11 @@ export class HyperliquidService {
         throw new Error(`Bybit API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as {
+        retCode: number;
+        retMsg: string;
+        result?: { list?: string[][] };
+      };
 
       if (data.retCode !== 0 || !data.result?.list || data.result.list.length === 0) {
         throw new Error(`Bybit API error: ${data.retMsg || 'Empty response'}`);
