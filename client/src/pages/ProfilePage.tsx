@@ -97,7 +97,7 @@ export function ProfilePage() {
         <div className="grid grid-cols-3 gap-2">
           <StatBox 
             label="Trades" 
-            value={String(stats?.totalTrades || 0)} 
+            value={String(stats?.tradeCount || 0)} 
           />
           <StatBox 
             label="Win Rate" 
@@ -236,7 +236,7 @@ export function ProfilePage() {
                 <div className="bg-[#1a1d21] rounded-lg p-3">
                   <p className="text-gray-500 text-xs mb-1">Total Trades</p>
                   <p className="text-lg font-mono font-semibold text-white">
-                    {stats?.totalTrades || 0}
+                    {stats?.tradeCount || 0}
                   </p>
                 </div>
                 <div className="bg-[#1a1d21] rounded-lg p-3">
