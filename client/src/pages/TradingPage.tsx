@@ -168,10 +168,10 @@ export function TradingPage() {
   const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets, searchQuery]);
   const openPositions = positions.filter(p => p.status === 'open');
 
-  // Trophy Icon Component (inline)
+  // Trophy Icon Component - Simple outline trophy in cyan
   const TrophyIcon = () => (
-    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 2C13.1 2 14 2.9 14 4V5H19C19.55 5 20 5.45 20 6V9C20 11.21 18.21 13 16 13H15.92C15.44 15.53 13.45 17.5 11 17.92V20H14C14.55 20 15 20.45 15 21C15 21.55 14.55 22 14 22H10C9.45 22 9 21.55 9 21C9 20.45 9.45 20 10 20H11V17.92C8.55 17.5 6.56 15.53 6.08 13H6C3.79 13 2 11.21 2 9V6C2 5.45 2.45 5 3 5H8V4C8 2.9 8.9 2 10 2H12ZM4 7V9C4 10.1 4.9 11 6 11H6.08C6.03 10.67 6 10.34 6 10V7H4ZM18 7H16V10C16 10.34 15.97 10.67 15.92 11H16C17.1 11 18 10.1 18 9V7ZM12 4H10C9.45 4 9 4.45 9 5V10C9 12.21 10.79 14 13 14C15.21 14 17 12.21 17 10V5C17 4.45 16.55 4 16 4H14V5C14 5.55 13.55 6 13 6C12.45 6 12 5.55 12 5V4Z"/>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a7.454 7.454 0 01-.982 3.172M7.73 9.728a7.454 7.454 0 00.981 3.172" />
     </svg>
   );
 
@@ -303,7 +303,7 @@ export function TradingPage() {
         <div className="flex items-center gap-2">
           <Link 
             to="/leaderboard"
-            className="p-1.5 text-gray-400 hover:text-[#ffd700] transition-colors"
+            className="p-1.5 text-[#00d4ff] hover:text-[#00d4ff]/80 transition-colors"
             title="Leaderboard"
           >
             <TrophyIcon />
@@ -401,7 +401,7 @@ export function TradingPage() {
             {/* Trophy icon LEFT of price */}
             <Link 
               to="/leaderboard"
-              className="p-1.5 text-gray-400 hover:text-[#ffd700] active:text-[#ffd700] transition-colors touch-manipulation"
+              className="p-1.5 text-[#00d4ff] hover:text-[#00d4ff]/80 active:text-[#00d4ff]/80 transition-colors touch-manipulation"
             >
               <TrophyIcon />
             </Link>

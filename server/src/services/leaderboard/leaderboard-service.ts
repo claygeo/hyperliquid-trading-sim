@@ -90,6 +90,11 @@ export class LeaderboardService {
       .eq('user_id', userId);
 
     if (!trades || trades.length === 0) {
+      // Remove from leaderboard if no trades
+      await supabase
+        .from('leaderboard_stats')
+        .delete()
+        .eq('user_id', userId);
       return;
     }
 
@@ -125,5 +130,27 @@ export class LeaderboardService {
         trade_count: trades.length,
         updated_at: new Date().toISOString(),
       });
+  }
+
+  async syncAllUsers(): Promise<void> {
+    const supabase = getSupabase();
+
+    // Get all unique user IDs from trades table
+    const { data: userIds } = await supabase
+      .from('trades')
+      .select('user_id')
+      .order('user_id');
+
+    if (!userIds || userIds.length === 0) {
+      return;
+    }
+
+    // Get unique user IDs
+    const uniqueUserIds = [...new Set(userIds.map(u => u.user_id))];
+
+    // Update stats for each user
+    for (const userId of uniqueUserIds) {
+      await this.updateUserStats(userId);
+    }
   }
 }
