@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { app } from './app.js';
 import { WebSocketServer } from './websocket/index.js';
 import { HyperliquidService } from './services/hyperliquid/index.js';
+import { BinanceKlineService } from './services/binance/index.js';
 import { StressTestService } from './services/stress-test/index.js';
 import { setHyperliquidService } from './routes/trading.routes.js';
 import { setStressTestService } from './routes/stressTest.routes.js';
@@ -19,8 +20,11 @@ async function main() {
   // Initialize WebSocket server
   const wss = new WebSocketServer(server);
 
-  // Initialize Hyperliquid service
-  const hyperliquid = new HyperliquidService(wss);
+  // Initialize Binance US kline service for real-time candle streaming
+  const binanceKline = new BinanceKlineService(wss);
+
+  // Initialize Hyperliquid service with Binance kline integration
+  const hyperliquid = new HyperliquidService(wss, binanceKline);
   
   // Initialize Stress Test service
   const stressTest = new StressTestService(wss);
@@ -42,6 +46,7 @@ async function main() {
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`WebSocket server ready`);
+    logger.info(`Binance US real-time klines enabled`);
     logger.info(`Environment: ${config.nodeEnv}`);
   });
 
@@ -50,6 +55,7 @@ async function main() {
     logger.info('Shutting down...');
     
     stressTest.setSpeed('off'); // Stop stress test
+    binanceKline.disconnect();
     hyperliquid.disconnect();
     wss.close();
     

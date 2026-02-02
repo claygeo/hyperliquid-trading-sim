@@ -113,6 +113,15 @@ export function TradingPage() {
   };
 
   const handleClosePosition = async (positionId: string, closeType: 'market' | 'limit' = 'market') => {
+    if (closeType === 'limit') {
+      addToast({
+        type: 'info',
+        title: 'Coming Soon',
+        message: 'Limit close orders are not yet available',
+      });
+      return;
+    }
+    
     setClosingPositionId(positionId);
     try {
       await closePosition(positionId);
@@ -123,7 +132,7 @@ export function TradingPage() {
       addToast({
         type: 'success',
         title: 'Position Closed',
-        message: closeType === 'market' ? 'Market close executed' : 'Limit close placed',
+        message: 'Market close executed',
       });
     } finally {
       setClosingPositionId(null);
@@ -167,14 +176,14 @@ export function TradingPage() {
   const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets, searchQuery]);
   const openPositions = positions.filter(p => p.status === 'open');
 
-  // Trophy Icon - Gold color outline
+  // Trophy Icon - Gray to match unselected nav items
   const TrophyIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a7.454 7.454 0 01-.982 3.172M7.73 9.728a7.454 7.454 0 00.981 3.172" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0116.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a7.454 7.454 0 01-.982 3.172M7.73 9.728a7.454 7.454 0 00.981 3.172" />
     </svg>
   );
 
-  // Position Card Component - Fixed layout with proper caret alignment
+  // Position Card with smaller fonts and text link close buttons
   const PositionCard = ({ position }: { position: Position }) => {
     const isExpanded = expandedPositionId === position.id;
     const isClosing = closingPositionId === position.id;
@@ -191,57 +200,54 @@ export function TradingPage() {
         'border-b border-[#1e2126]/50',
         isClosing && 'opacity-50'
       )}>
-        {/* Clickable header row */}
         <button
           onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}
-          className="w-full px-3 py-3 touch-manipulation"
+          className="w-full px-2 py-2 touch-manipulation"
         >
-          <div className="flex items-center">
-            {/* Left: Coin info */}
-            <div className="w-[25%] text-left">
-              <div className="text-gray-500 text-xs mb-0.5">Coin</div>
-              <div className="flex items-baseline gap-1">
+          {/* Three columns: 20% Coin, 35% Size, 45% PNL */}
+          <div className="flex items-start">
+            {/* Coin column - 20% */}
+            <div className="w-[20%] text-left flex-shrink-0">
+              <div className="text-[9px] text-gray-500 mb-0.5">Coin</div>
+              <div className="flex items-baseline gap-0.5">
                 <span className={cn(
-                  'font-medium text-sm',
+                  'text-[11px] font-medium',
                   isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   {position.asset}
                 </span>
                 <span className={cn(
-                  'text-[10px]',
+                  'text-[8px] leading-none',
                   isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   {position.leverage}x
                 </span>
               </div>
             </div>
-
-            {/* Middle: Size */}
-            <div className="w-[35%] text-left">
-              <div className="text-gray-500 text-xs mb-0.5">Size</div>
-              <div className="text-white font-mono text-sm truncate">
-                {formatSize(position.size)} {position.asset}
-              </div>
+            
+            {/* Size column - 35% */}
+            <div className="w-[35%] text-left flex-shrink-0">
+              <div className="text-[9px] text-gray-500 mb-0.5">Size</div>
+              <div className="text-[10px] text-white font-mono">{formatSize(position.size)} {position.asset}</div>
             </div>
-
-            {/* Right: PNL + Caret */}
-            <div className="w-[40%] flex items-center justify-between">
-              <div className="text-left">
-                <div className="text-gray-500 text-xs mb-0.5">PNL (ROE %)</div>
+            
+            {/* PNL column - 45% */}
+            <div className="w-[45%] text-left flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-[9px] text-gray-500 mb-0.5">PNL (ROE %)</div>
                 <div className={cn(
-                  'font-mono font-medium text-sm',
+                  'text-[10px] font-mono font-medium',
                   isProfitable ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   <AnimatedNumber value={position.unrealizedPnl} format={formatUSD} duration={200} />
-                  <span className="text-[10px] ml-1">
+                  <span className="text-[8px] ml-0.5">
                     (<AnimatedNumber value={position.unrealizedPnlPercent} format={formatPercent} duration={200} />)
                   </span>
                 </div>
               </div>
-              {/* Fixed caret - always visible */}
               <svg 
                 className={cn(
-                  'w-5 h-5 text-gray-500 transition-transform flex-shrink-0 ml-2',
+                  'w-3 h-3 text-gray-500 transition-transform flex-shrink-0 ml-1',
                   isExpanded && 'rotate-180'
                 )} 
                 fill="none" 
@@ -254,46 +260,46 @@ export function TradingPage() {
           </div>
         </button>
 
-        {/* Expanded details */}
         {isExpanded && (
-          <div className="px-3 pb-3 space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="px-2 pb-2 space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
               <div>
-                <div className="text-gray-500">Entry Price</div>
+                <div className="text-gray-500 text-[9px]">Entry Price</div>
                 <div className="text-white font-mono">{formatPrice(position.entryPrice)}</div>
               </div>
               <div>
-                <div className="text-gray-500">Mark Price</div>
+                <div className="text-gray-500 text-[9px]">Mark Price</div>
                 <div className="text-white font-mono">{formatPrice(position.currentPrice || currentPrice)}</div>
               </div>
               <div>
-                <div className="text-gray-500">Liq. Price</div>
+                <div className="text-gray-500 text-[9px]">Liq. Price</div>
                 <div className="text-[#f6465d] font-mono">{formatPrice(liqPrice)}</div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-[10px]">
               <div>
-                <div className="text-gray-500">Margin</div>
+                <div className="text-gray-500 text-[9px]">Margin</div>
                 <div className="text-white font-mono">{formatUSD(margin)}</div>
               </div>
               <div>
-                <div className="text-gray-500">Notional</div>
+                <div className="text-gray-500 text-[9px]">Notional</div>
                 <div className="text-white font-mono">{formatUSD(position.size * position.entryPrice)}</div>
               </div>
             </div>
-            
-            {/* Horizontal close buttons like Hyperliquid */}
-            <div className="flex items-center gap-4 pt-2 border-t border-[#1e2126]/50">
+            {/* Text link close buttons like Hyperliquid */}
+            <div className="flex items-center justify-center gap-3 pt-1">
               <button
-                onClick={() => addToast({ type: 'info', title: 'Coming Soon', message: 'Limit close will be available soon' })}
-                className="text-[#00d4ff] text-sm font-medium touch-manipulation"
+                onClick={() => handleClosePosition(position.id, 'limit')}
+                disabled={isClosing}
+                className="text-[11px] text-gray-400 hover:text-white transition-colors touch-manipulation disabled:opacity-50"
               >
                 Limit Close
               </button>
+              <span className="text-gray-600">|</span>
               <button
                 onClick={() => handleClosePosition(position.id, 'market')}
                 disabled={isClosing}
-                className="text-[#f6465d] text-sm font-medium touch-manipulation disabled:opacity-50"
+                className="text-[11px] text-[#f6465d] hover:text-[#ff6b6b] transition-colors touch-manipulation disabled:opacity-50"
               >
                 {isClosing ? 'Closing...' : 'Market Close'}
               </button>
@@ -321,7 +327,7 @@ export function TradingPage() {
         <div className="flex items-center gap-2">
           <Link 
             to="/leaderboard"
-            className="p-1.5 text-[#f0b90b] hover:text-[#f0b90b]/80 transition-colors"
+            className="p-1.5 text-gray-500 hover:text-gray-400 transition-colors"
             title="Leaderboard"
           >
             <TrophyIcon />
@@ -403,7 +409,7 @@ export function TradingPage() {
 
       {/* Mobile Layout */}
       <div className="md:hidden flex flex-col h-[100dvh] pb-12">
-        {/* Header - Gold trophy */}
+        {/* Header with gray trophy LEFT of price */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 
             onClick={() => setShowAssetSearch(true)}
@@ -415,14 +421,15 @@ export function TradingPage() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
+            {/* Gray trophy icon */}
             <Link 
               to="/leaderboard"
-              className="p-1.5 text-[#f0b90b] hover:text-[#f0b90b]/80 active:text-[#f0b90b]/80 transition-colors touch-manipulation"
+              className="p-1.5 text-gray-500 hover:text-gray-400 active:text-gray-400 transition-colors touch-manipulation"
             >
               <TrophyIcon />
             </Link>
             <span className={cn(
-              'text-base font-semibold tabular-nums font-mono',
+              'text-base font-semibold tabular-nums',
               currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
                 ? 'text-[#3dd9a4]' 
                 : 'text-[#f6465d]'
@@ -436,10 +443,12 @@ export function TradingPage() {
           </div>
         </div>
 
-        {/* Main content */}
+        {/* Main content based on mobile view */}
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          {/* MARKETS VIEW */}
           {mobileView === 'markets' && (
             <div className="flex flex-col h-full">
+              {/* Markets sub-tabs: Chart | Order Book */}
               <div className="flex border-b border-[#1e2126] bg-[#0d0f11] flex-shrink-0">
                 {[
                   { id: 'chart', label: 'Chart' },
@@ -460,9 +469,11 @@ export function TradingPage() {
                 ))}
               </div>
 
+              {/* Markets content */}
               <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {marketsTab === 'chart' && (
                   <>
+                    {/* Chart */}
                     <div className="flex-1 min-h-[200px]">
                       <PriceChart
                         candles={currentCandles}
@@ -475,6 +486,7 @@ export function TradingPage() {
                       />
                     </div>
 
+                    {/* Positions section */}
                     <div className="flex-shrink-0 border-t border-[#1e2126]">
                       <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
                         <span className="text-sm font-medium text-white">
@@ -527,8 +539,10 @@ export function TradingPage() {
             </div>
           )}
           
+          {/* TRADE VIEW */}
           {mobileView === 'trade' && (
             <div className="flex-1 flex min-h-0">
+              {/* Left side: Orderbook */}
               <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
                 <Orderbook 
                   orderbook={orderbook} 
@@ -538,6 +552,7 @@ export function TradingPage() {
                 />
               </div>
               
+              {/* Right side: Order Form */}
               <div className="w-[55%] overflow-hidden">
                 <OrderForm
                   selectedAsset={selectedAsset}

@@ -3,6 +3,7 @@ import { config } from '../../config/index.js';
 import { initializeAssets } from '../../config/assets.js';
 import { logger } from '../../lib/logger.js';
 import type { WebSocketServer } from '../../websocket/index.js';
+import type { BinanceKlineService } from '../binance/index.js';
 import type { Candle, Orderbook, OrderbookLevel, Trade } from '../../types/market.js';
 import type { HLCandle, HLOrderbook, HLTrade, HLAllMids } from '../../types/hyperliquid.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -102,13 +103,13 @@ const CRYPTOCOMPARE_SYMBOLS: Record<string, string> = {
   HYPE: 'HYPE',
 };
 
-// Cache TTL for historical candles - longer for reliability
+// Cache TTL for historical candles - shorter since we have live Binance updates
 const CANDLE_CACHE_TTL: Record<string, number> = {
-  '1m': 45 * 1000,      // 45 seconds
-  '5m': 2 * 60 * 1000,  // 2 minutes
-  '15m': 5 * 60 * 1000, // 5 minutes
-  '1h': 15 * 60 * 1000, // 15 minutes
-  '4h': 30 * 60 * 1000, // 30 minutes
+  '1m': 30 * 1000,      // 30 seconds
+  '5m': 60 * 1000,      // 1 minute
+  '15m': 3 * 60 * 1000, // 3 minutes
+  '1h': 10 * 60 * 1000, // 10 minutes
+  '4h': 20 * 60 * 1000, // 20 minutes
   '1d': 60 * 60 * 1000, // 1 hour
 };
 
@@ -127,6 +128,7 @@ let assetsInitialized = false;
 export class HyperliquidService {
   private ws: WebSocket | null = null;
   private wss: WebSocketServer;
+  private binanceKline: BinanceKlineService | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectTimeout: NodeJS.Timeout | null = null;
@@ -138,9 +140,13 @@ export class HyperliquidService {
   private subscribedAssets: Set<string> = new Set();
   private subscriptionQueue: string[] = [];
   private isProcessingQueue = false;
+  
+  // Track Binance kline subscriptions
+  private binanceKlineSubscriptions: Set<string> = new Set();
 
-  constructor(wss: WebSocketServer) {
+  constructor(wss: WebSocketServer, binanceKline?: BinanceKlineService) {
     this.wss = wss;
+    this.binanceKline = binanceKline || null;
   }
 
   async connect(): Promise<void> {
@@ -229,10 +235,14 @@ export class HyperliquidService {
   }
 
   // Get candles - either from cache or fetch from REST API
+  // Also subscribes to Binance US klines for real-time updates
   async getCandles(asset: string, timeframe: string, limit: number = 500): Promise<Candle[]> {
     const cacheKey = `${asset}-${timeframe}`;
     const cached = this.candleCache.get(cacheKey);
     const cacheTTL = CANDLE_CACHE_TTL[timeframe] || CANDLE_CACHE_TTL['1h'];
+    
+    // Subscribe to Binance US klines for real-time updates
+    this.subscribeToBinanceKlines(asset, timeframe);
     
     // Validate cached data - ensure it has the correct asset
     if (cached && Date.now() - cached.timestamp < cacheTTL && cached.candles.length > 0) {
@@ -246,10 +256,13 @@ export class HyperliquidService {
           logger.info(`Cache invalidated for ${asset}: price drift too large (${priceDiff.toFixed(2)})`);
           this.candleCache.delete(cacheKey);
         } else {
-          return cached.candles.slice(-limit);
+          // Merge with any live Binance candles
+          const mergedCandles = this.mergeWithBinanceLive(cached.candles, asset, timeframe);
+          return mergedCandles.slice(-limit);
         }
       } else {
-        return cached.candles.slice(-limit);
+        const mergedCandles = this.mergeWithBinanceLive(cached.candles, asset, timeframe);
+        return mergedCandles.slice(-limit);
       }
     }
 
@@ -292,7 +305,10 @@ export class HyperliquidService {
       this.queueAssetSubscription(asset);
       
       logger.info(`Cached ${candles.length} candles for ${asset} ${timeframe}`);
-      return candles.slice(-limit);
+      
+      // Merge with any live Binance candles before returning
+      const mergedCandles = this.mergeWithBinanceLive(candles, asset, timeframe);
+      return mergedCandles.slice(-limit);
     } catch (error) {
       logger.error(`Failed to fetch candles for ${asset} ${timeframe}:`, error);
       
@@ -306,6 +322,26 @@ export class HyperliquidService {
     } finally {
       setTimeout(() => pendingCandleFetches.delete(cacheKey), 1000);
     }
+  }
+
+  // Subscribe to Binance US klines for real-time candle updates
+  private subscribeToBinanceKlines(asset: string, timeframe: string): void {
+    if (!this.binanceKline) return;
+    
+    const subscriptionKey = `${asset}-${timeframe}`;
+    if (this.binanceKlineSubscriptions.has(subscriptionKey)) return;
+    
+    if (this.binanceKline.isSupported(asset)) {
+      this.binanceKline.subscribeToKlines(asset, timeframe);
+      this.binanceKlineSubscriptions.add(subscriptionKey);
+      logger.info(`Subscribed to Binance US klines: ${asset} ${timeframe}`);
+    }
+  }
+
+  // Merge REST candles with live Binance updates
+  private mergeWithBinanceLive(restCandles: Candle[], asset: string, timeframe: string): Candle[] {
+    if (!this.binanceKline) return restCandles;
+    return this.binanceKline.mergeWithLiveCandles(restCandles, asset, timeframe);
   }
 
   // Queue asset subscription to avoid overwhelming the WebSocket
@@ -340,6 +376,8 @@ export class HyperliquidService {
   // Public method to subscribe to an asset
   subscribeToAsset(asset: string): void {
     this.queueAssetSubscription(asset);
+    // Also subscribe to Binance klines for 1m timeframe
+    this.subscribeToBinanceKlines(asset, '1m');
   }
 
   // Immediate subscription (called from queue)
