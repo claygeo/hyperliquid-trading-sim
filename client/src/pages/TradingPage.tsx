@@ -164,18 +164,17 @@ export function TradingPage() {
     setLimitPriceFromOrderbook(price);
   }, []);
 
-  // Memoize filtered assets to prevent re-renders
   const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets, searchQuery]);
   const openPositions = positions.filter(p => p.status === 'open');
 
-  // Trophy Icon Component - Simple outline trophy in cyan
+  // Trophy Icon - Gold color outline
   const TrophyIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a7.454 7.454 0 01-.982 3.172M7.73 9.728a7.454 7.454 0 00.981 3.172" />
     </svg>
   );
 
-  // Position Card Component with colored coin name
+  // Position Card Component - Fixed layout with proper caret alignment
   const PositionCard = ({ position }: { position: Position }) => {
     const isExpanded = expandedPositionId === position.id;
     const isClosing = closingPositionId === position.id;
@@ -192,38 +191,45 @@ export function TradingPage() {
         'border-b border-[#1e2126]/50',
         isClosing && 'opacity-50'
       )}>
+        {/* Clickable header row */}
         <button
           onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}
           className="w-full px-3 py-3 touch-manipulation"
         >
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="text-left">
-              <div className="text-gray-500 mb-0.5">Coin</div>
+          <div className="flex items-center">
+            {/* Left: Coin info */}
+            <div className="w-[25%] text-left">
+              <div className="text-gray-500 text-xs mb-0.5">Coin</div>
               <div className="flex items-baseline gap-1">
-                {/* Coin name colored based on long/short */}
                 <span className={cn(
-                  'font-medium',
+                  'font-medium text-sm',
                   isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   {position.asset}
                 </span>
                 <span className={cn(
-                  'text-[10px] leading-none',
+                  'text-[10px]',
                   isLong ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   {position.leverage}x
                 </span>
               </div>
             </div>
-            <div className="text-left">
-              <div className="text-gray-500 mb-0.5">Size</div>
-              <div className="text-white font-mono">{formatSize(position.size)} {position.asset}</div>
+
+            {/* Middle: Size */}
+            <div className="w-[35%] text-left">
+              <div className="text-gray-500 text-xs mb-0.5">Size</div>
+              <div className="text-white font-mono text-sm truncate">
+                {formatSize(position.size)} {position.asset}
+              </div>
             </div>
-            <div className="text-left flex items-center justify-between">
-              <div>
-                <div className="text-gray-500 mb-0.5">PNL (ROE %)</div>
+
+            {/* Right: PNL + Caret */}
+            <div className="w-[40%] flex items-center justify-between">
+              <div className="text-left">
+                <div className="text-gray-500 text-xs mb-0.5">PNL (ROE %)</div>
                 <div className={cn(
-                  'font-mono font-medium',
+                  'font-mono font-medium text-sm',
                   isProfitable ? 'text-[#3dd9a4]' : 'text-[#f6465d]'
                 )}>
                   <AnimatedNumber value={position.unrealizedPnl} format={formatUSD} duration={200} />
@@ -232,9 +238,10 @@ export function TradingPage() {
                   </span>
                 </div>
               </div>
+              {/* Fixed caret - always visible */}
               <svg 
                 className={cn(
-                  'w-4 h-4 text-gray-500 transition-transform',
+                  'w-5 h-5 text-gray-500 transition-transform flex-shrink-0 ml-2',
                   isExpanded && 'rotate-180'
                 )} 
                 fill="none" 
@@ -247,6 +254,7 @@ export function TradingPage() {
           </div>
         </button>
 
+        {/* Expanded details */}
         {isExpanded && (
           <div className="px-3 pb-3 space-y-3">
             <div className="grid grid-cols-3 gap-2 text-xs">
@@ -273,13 +281,23 @@ export function TradingPage() {
                 <div className="text-white font-mono">{formatUSD(position.size * position.entryPrice)}</div>
               </div>
             </div>
-            <button
-              onClick={() => handleClosePosition(position.id, 'market')}
-              disabled={isClosing}
-              className="w-full py-2.5 bg-[#f6465d] text-white rounded-lg text-sm font-medium touch-manipulation disabled:opacity-50"
-            >
-              {isClosing ? 'Closing...' : 'Market Close'}
-            </button>
+            
+            {/* Horizontal close buttons like Hyperliquid */}
+            <div className="flex items-center gap-4 pt-2 border-t border-[#1e2126]/50">
+              <button
+                onClick={() => addToast({ type: 'info', title: 'Coming Soon', message: 'Limit close will be available soon' })}
+                className="text-[#00d4ff] text-sm font-medium touch-manipulation"
+              >
+                Limit Close
+              </button>
+              <button
+                onClick={() => handleClosePosition(position.id, 'market')}
+                disabled={isClosing}
+                className="text-[#f6465d] text-sm font-medium touch-manipulation disabled:opacity-50"
+              >
+                {isClosing ? 'Closing...' : 'Market Close'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -303,7 +321,7 @@ export function TradingPage() {
         <div className="flex items-center gap-2">
           <Link 
             to="/leaderboard"
-            className="p-1.5 text-[#00d4ff] hover:text-[#00d4ff]/80 transition-colors"
+            className="p-1.5 text-[#f0b90b] hover:text-[#f0b90b]/80 transition-colors"
             title="Leaderboard"
           >
             <TrophyIcon />
@@ -329,7 +347,7 @@ export function TradingPage() {
 
   return (
     <div className="h-full overflow-hidden flex flex-col bg-[#0d0f11]">
-      {/* Asset Search Modal - Fixed for mobile scrolling */}
+      {/* Asset Search Modal */}
       {showAssetSearch && (
         <div className="fixed inset-0 z-50 bg-[#0d0f11]">
           <div className="flex flex-col h-full">
@@ -354,7 +372,6 @@ export function TradingPage() {
               </div>
             </div>
             
-            {/* Scrollable list with proper iOS momentum scrolling */}
             <div 
               className="flex-1 overflow-y-auto overscroll-contain"
               style={{ WebkitOverflowScrolling: 'touch' }}
@@ -386,7 +403,7 @@ export function TradingPage() {
 
       {/* Mobile Layout */}
       <div className="md:hidden flex flex-col h-[100dvh] pb-12">
-        {/* Header with trophy LEFT of price */}
+        {/* Header - Gold trophy */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0f11] border-b border-[#1e2126]">
           <button 
             onClick={() => setShowAssetSearch(true)}
@@ -398,15 +415,14 @@ export function TradingPage() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            {/* Trophy icon LEFT of price */}
             <Link 
               to="/leaderboard"
-              className="p-1.5 text-[#00d4ff] hover:text-[#00d4ff]/80 active:text-[#00d4ff]/80 transition-colors touch-manipulation"
+              className="p-1.5 text-[#f0b90b] hover:text-[#f0b90b]/80 active:text-[#f0b90b]/80 transition-colors touch-manipulation"
             >
               <TrophyIcon />
             </Link>
             <span className={cn(
-              'text-base font-semibold tabular-nums',
+              'text-base font-semibold tabular-nums font-mono',
               currentPrice > 0 && currentCandles.length > 0 && currentPrice >= currentCandles[currentCandles.length - 1]?.open 
                 ? 'text-[#3dd9a4]' 
                 : 'text-[#f6465d]'
@@ -420,12 +436,10 @@ export function TradingPage() {
           </div>
         </div>
 
-        {/* Main content based on mobile view */}
+        {/* Main content */}
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          {/* MARKETS VIEW */}
           {mobileView === 'markets' && (
             <div className="flex flex-col h-full">
-              {/* Markets sub-tabs: Chart | Order Book */}
               <div className="flex border-b border-[#1e2126] bg-[#0d0f11] flex-shrink-0">
                 {[
                   { id: 'chart', label: 'Chart' },
@@ -446,11 +460,9 @@ export function TradingPage() {
                 ))}
               </div>
 
-              {/* Markets content */}
               <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {marketsTab === 'chart' && (
                   <>
-                    {/* Chart */}
                     <div className="flex-1 min-h-[200px]">
                       <PriceChart
                         candles={currentCandles}
@@ -463,7 +475,6 @@ export function TradingPage() {
                       />
                     </div>
 
-                    {/* Positions section - fixed height, scrollable */}
                     <div className="flex-shrink-0 border-t border-[#1e2126]">
                       <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
                         <span className="text-sm font-medium text-white">
@@ -482,7 +493,6 @@ export function TradingPage() {
                         )}
                       </div>
 
-                      {/* Fixed height container - shows ~1.5 positions, rest scrolls */}
                       <div className={cn(
                         'overflow-y-auto',
                         openPositions.length === 0 ? 'h-16' : 'h-[120px]'
@@ -517,10 +527,8 @@ export function TradingPage() {
             </div>
           )}
           
-          {/* TRADE VIEW - Orderbook + Order Form side by side (like before) */}
           {mobileView === 'trade' && (
             <div className="flex-1 flex min-h-0">
-              {/* Left side: Orderbook */}
               <div className="w-[45%] border-r border-[#1e2126] overflow-hidden">
                 <Orderbook 
                   orderbook={orderbook} 
@@ -530,7 +538,6 @@ export function TradingPage() {
                 />
               </div>
               
-              {/* Right side: Order Form */}
               <div className="w-[55%] overflow-hidden">
                 <OrderForm
                   selectedAsset={selectedAsset}

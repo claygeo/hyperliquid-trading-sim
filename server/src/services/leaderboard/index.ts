@@ -124,7 +124,7 @@ export class LeaderboardService {
       .upsert({
         user_id: userId,
         total_pnl: totalPnl,
-        total_pnl_percent: (totalPnl / 100000) * 100, // Assuming 100k initial
+        total_pnl_percent: (totalPnl / 100000) * 100,
         win_rate: winRate,
         max_drawdown: maxDrawdownPercent,
         trade_count: trades.length,
