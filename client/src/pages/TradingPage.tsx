@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { PriceChart } from '../components/chart/PriceChart';
 import { Orderbook } from '../components/orderbook/Orderbook';
 import { RecentTrades } from '../components/trades/RecentTrades';
@@ -22,7 +22,9 @@ type MobileView = 'markets' | 'trade';
 type MarketsTab = 'chart' | 'orderbook';
 
 export function TradingPage() {
-  const [mobileView, setMobileView] = useState<MobileView>('markets');
+  const location = useLocation();
+  const initialTab = (location.state as { activeTab?: MobileView })?.activeTab || 'markets';
+  const [mobileView, setMobileView] = useState<MobileView>(initialTab);
   const [marketsTab, setMarketsTab] = useState<MarketsTab>('chart');
   const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(null);
@@ -152,17 +154,18 @@ export function TradingPage() {
     }
   };
 
-  const handleAssetSelect = (symbol: string) => {
+  const handleAssetSelect = useCallback((symbol: string) => {
     setSelectedAsset(symbol);
     setShowAssetSearch(false);
     setSearchQuery('');
-  };
+  }, [setSelectedAsset, setSearchQuery]);
 
   const handleOrderbookPriceClick = useCallback((price: number) => {
     setLimitPriceFromOrderbook(price);
   }, []);
 
-  const filteredAssets = getFilteredAssets();
+  // Memoize filtered assets to prevent re-renders
+  const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets, searchQuery]);
   const openPositions = positions.filter(p => p.status === 'open');
 
   // Trophy Icon Component (inline)
@@ -170,57 +173,6 @@ export function TradingPage() {
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
       <path d="M12 2C13.1 2 14 2.9 14 4V5H19C19.55 5 20 5.45 20 6V9C20 11.21 18.21 13 16 13H15.92C15.44 15.53 13.45 17.5 11 17.92V20H14C14.55 20 15 20.45 15 21C15 21.55 14.55 22 14 22H10C9.45 22 9 21.55 9 21C9 20.45 9.45 20 10 20H11V17.92C8.55 17.5 6.56 15.53 6.08 13H6C3.79 13 2 11.21 2 9V6C2 5.45 2.45 5 3 5H8V4C8 2.9 8.9 2 10 2H12ZM4 7V9C4 10.1 4.9 11 6 11H6.08C6.03 10.67 6 10.34 6 10V7H4ZM18 7H16V10C16 10.34 15.97 10.67 15.92 11H16C17.1 11 18 10.1 18 9V7ZM12 4H10C9.45 4 9 4.45 9 5V10C9 12.21 10.79 14 13 14C15.21 14 17 12.21 17 10V5C17 4.45 16.55 4 16 4H14V5C14 5.55 13.55 6 13 6C12.45 6 12 5.55 12 5V4Z"/>
     </svg>
-  );
-
-  // Asset Search Modal
-  const AssetSearchModal = () => (
-    <div className="fixed inset-0 z-50 bg-[#0d0f11]">
-      <div className="flex flex-col h-full">
-        <div className="p-3 border-b border-[#1e2126]">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => { setShowAssetSearch(false); setSearchQuery(''); }}
-              className="p-2 text-gray-400 hover:text-white touch-manipulation"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <input
-              type="text"
-              placeholder="Search markets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-[#1a1d21] border border-[#1e2126] rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-[#00d4ff] text-sm"
-              autoFocus
-            />
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto">
-          {filteredAssets.map((asset) => (
-            <button
-              key={asset.symbol}
-              onClick={() => handleAssetSelect(asset.symbol)}
-              className={cn(
-                'w-full flex items-center justify-between px-4 py-3 border-b border-[#1e2126]/50 transition-colors touch-manipulation',
-                asset.symbol === selectedAsset ? 'bg-[#00d4ff]/10' : 'active:bg-[#1a1d21]'
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-white font-medium">{asset.symbol}</span>
-                <span className="text-gray-500 text-sm">PERP</span>
-              </div>
-              {asset.symbol === selectedAsset && (
-                <svg className="w-5 h-5 text-[#00d4ff]" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 
   // Position Card Component with colored coin name
@@ -377,7 +329,60 @@ export function TradingPage() {
 
   return (
     <div className="h-full overflow-hidden flex flex-col bg-[#0d0f11]">
-      {showAssetSearch && <AssetSearchModal />}
+      {/* Asset Search Modal - Fixed for mobile scrolling */}
+      {showAssetSearch && (
+        <div className="fixed inset-0 z-50 bg-[#0d0f11]">
+          <div className="flex flex-col h-full">
+            <div className="flex-shrink-0 p-3 border-b border-[#1e2126]">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => { setShowAssetSearch(false); setSearchQuery(''); }}
+                  className="p-2 text-gray-400 hover:text-white touch-manipulation"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <input
+                  type="text"
+                  placeholder="Search markets..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-[#1a1d21] border border-[#1e2126] rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-[#00d4ff] text-sm"
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            {/* Scrollable list with proper iOS momentum scrolling */}
+            <div 
+              className="flex-1 overflow-y-auto overscroll-contain"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              {filteredAssets.map((asset) => (
+                <button
+                  key={asset.symbol}
+                  onClick={() => handleAssetSelect(asset.symbol)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-4 py-3 border-b border-[#1e2126]/50 transition-colors touch-manipulation',
+                    asset.symbol === selectedAsset ? 'bg-[#00d4ff]/10' : 'active:bg-[#1a1d21]'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-white font-medium">{asset.symbol}</span>
+                    <span className="text-gray-500 text-sm">PERP</span>
+                  </div>
+                  {asset.symbol === selectedAsset && (
+                    <svg className="w-5 h-5 text-[#00d4ff]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Layout */}
       <div className="md:hidden flex flex-col h-[100dvh] pb-12">
@@ -458,8 +463,8 @@ export function TradingPage() {
                       />
                     </div>
 
-                    {/* Positions section */}
-                    <div className="flex flex-col border-t border-[#1e2126]">
+                    {/* Positions section - fixed height, scrollable */}
+                    <div className="flex-shrink-0 border-t border-[#1e2126]">
                       <div className="flex items-center gap-3 px-3 py-2 bg-[#0d0f11] border-b border-[#1e2126]">
                         <span className="text-sm font-medium text-white">
                           Positions ({openPositions.length})
@@ -477,12 +482,13 @@ export function TradingPage() {
                         )}
                       </div>
 
+                      {/* Fixed height container - shows ~1.5 positions, rest scrolls */}
                       <div className={cn(
                         'overflow-y-auto',
-                        openPositions.length === 0 ? 'py-4' : 'max-h-[40vh]'
+                        openPositions.length === 0 ? 'h-16' : 'h-[120px]'
                       )}>
                         {openPositions.length === 0 ? (
-                          <div className="flex flex-col items-center text-gray-500 text-sm">
+                          <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
                             <p>No open positions</p>
                             {!isAuthenticated && (
                               <Link to="/login" className="text-[#00d4ff] mt-1 touch-manipulation">Login to trade</Link>

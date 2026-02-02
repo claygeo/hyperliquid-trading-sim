@@ -4,6 +4,7 @@ import { Leaderboard } from '../components/leaderboard/Leaderboard';
 import { LeaderboardTabs } from '../components/leaderboard/LeaderboardTabs';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
+import { MobileNav } from '../components/ui/MobileNav';
 
 export function LeaderboardPage() {
   const { entries, period, total, page, pageSize, isLoading, fetchLeaderboard, setPeriod, nextPage, prevPage } = useLeaderboardStore();
@@ -73,6 +74,9 @@ export function LeaderboardPage() {
           )}
         </div>
       </div>
+
+      {/* Mobile Navigation */}
+      <MobileNav />
     </div>
   );
 }

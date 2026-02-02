@@ -11,12 +11,20 @@ export function MobileNav({ activeTab = 'markets', onTabChange }: MobileNavProps
   const navigate = useNavigate();
   
   const isProfile = location.pathname === '/profile';
+  const isTradingPage = location.pathname === '/' || location.pathname === '/trade';
   
   const handleTabClick = (tab: 'markets' | 'trade' | 'account') => {
     if (tab === 'account') {
       navigate('/profile');
-    } else if (onTabChange) {
-      onTabChange(tab);
+    } else if (tab === 'markets' || tab === 'trade') {
+      // If we have onTabChange (on TradingPage), use it
+      // Otherwise navigate to home with state
+      if (onTabChange && isTradingPage) {
+        onTabChange(tab);
+      } else {
+        // Navigate to trading page with the selected tab as state
+        navigate('/', { state: { activeTab: tab } });
+      }
     }
   };
 
