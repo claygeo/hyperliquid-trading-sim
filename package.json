@@ -12,7 +12,12 @@
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
     "lint": "npm run lint:client && npm run lint:server",
     "lint:client": "cd client && npm run lint",
-    "lint:server": "cd server && npm run lint"
+    "lint:server": "cd server && npm run lint",
+    "typecheck": "npm run typecheck:client && npm run typecheck:server",
+    "typecheck:client": "cd client && npx tsc --noEmit",
+    "typecheck:server": "cd server && npm run typecheck",
+    "test": "cd server && npm test",
+    "test:coverage": "cd server && npm run test:coverage"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
