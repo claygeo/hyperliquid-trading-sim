@@ -122,38 +122,14 @@ export class PositionManager {
   private async liquidatePosition(positionId: string): Promise<void> {
     const supabase = getSupabase();
 
-    const { data: position } = await supabase
-      .from('positions')
-      .select('*')
-      .eq('id', positionId)
-      .single();
+    // Execute liquidation atomically via RPC
+    const { error } = await supabase.rpc('liquidate_position_atomic', {
+      p_position_id: positionId,
+    });
 
-    if (!position) return;
-
-    // Close position with liquidation
-    await supabase
-      .from('positions')
-      .update({
-        status: 'liquidated',
-        realized_pnl: -position.margin, // Lose entire margin
-        unrealized_pnl: 0,
-        unrealized_pnl_percent: 0,
-        closed_at: new Date().toISOString(),
-      })
-      .eq('id', positionId);
-
-    // Update account balance (margin is lost)
-    const { data: account } = await supabase
-      .from('accounts')
-      .select('balance')
-      .eq('user_id', position.user_id)
-      .single();
-
-    if (account) {
-      await supabase
-        .from('accounts')
-        .update({ balance: Math.max(0, account.balance - position.margin) })
-        .eq('user_id', position.user_id);
+    if (error) {
+      // Non-critical: position may have already been closed
+      return;
     }
   }
 

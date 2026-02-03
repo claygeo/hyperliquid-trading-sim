@@ -27,7 +27,6 @@ export class OrderExecutor {
     if (accountError || !account) {
       logger.info(`Creating account for user ${userId}`);
       
-      // Create account with initial balance
       const { data: newAccount, error: createError } = await supabase
         .from('accounts')
         .insert({
@@ -77,92 +76,49 @@ export class OrderExecutor {
       throw new ValidationError('Invalid price');
     }
 
-    const supabase = getSupabase();
+    // Ensure account exists before calling RPC
+    await this.getOrCreateAccount(userId);
 
-    // Get or create user's account
-    const account = await this.getOrCreateAccount(userId);
-    logger.info(`Account balance: ${account.balance}`);
-
-    // Calculate margin required
+    // Calculate values
     const notionalValue = size * currentPrice;
     const marginRequired = notionalValue / leverage;
-
-    logger.info(`Notional: ${notionalValue}, Margin required: ${marginRequired}`);
-
-    // Available balance is just the account balance
-    // (margin is deducted from balance when positions are opened, so no need to subtract usedMargin)
-    const availableBalance = account.balance;
-
-    logger.info(`Available balance: ${availableBalance}`);
-
-    if (marginRequired > availableBalance) {
-      throw new InsufficientFundsError(
-        `Insufficient margin. Required: $${marginRequired.toFixed(2)}, Available: $${availableBalance.toFixed(2)}`
-      );
-    }
-
-    // Deduct margin from balance
-    const newBalance = account.balance - marginRequired;
-    const { error: balanceError } = await supabase
-      .from('accounts')
-      .update({ balance: newBalance })
-      .eq('user_id', userId);
-
-    if (balanceError) {
-      logger.error(`Failed to update balance:`, balanceError);
-      throw new Error(`Failed to update balance: ${balanceError.message}`);
-    }
-
-    logger.info(`Updated balance from ${account.balance} to ${newBalance}`);
-
-    // Calculate liquidation price
     const liquidationPrice = this.pnlCalculator.calculateLiquidationPrice(
       currentPrice,
       leverage,
       side
     );
 
-    // Create position
+    logger.info(`Notional: ${notionalValue}, Margin required: ${marginRequired}`);
+
     const positionId = uuidv4();
-    const position = {
-      id: positionId,
-      user_id: userId,
-      asset,
-      side,
-      entry_price: currentPrice,
-      current_price: currentPrice,
-      size,
-      leverage,
-      margin: marginRequired,
-      liquidation_price: liquidationPrice,
-      unrealized_pnl: 0,
-      unrealized_pnl_percent: 0,
-      realized_pnl: 0,
-      status: 'open',
-      opened_at: new Date().toISOString(),
-    };
+    const supabase = getSupabase();
 
-    // Insert position
-    const { data: newPosition, error: insertError } = await supabase
-      .from('positions')
-      .insert(position)
-      .select()
-      .single();
+    // Execute atomically via RPC — balance check, deduction, and position creation
+    // all happen in a single database transaction
+    const { data, error } = await supabase.rpc('execute_market_order', {
+      p_position_id: positionId,
+      p_user_id: userId,
+      p_asset: asset,
+      p_side: side,
+      p_entry_price: currentPrice,
+      p_size: size,
+      p_leverage: leverage,
+      p_margin: marginRequired,
+      p_liquidation_price: liquidationPrice,
+    });
 
-    if (insertError) {
-      // Rollback balance deduction
-      await supabase
-        .from('accounts')
-        .update({ balance: account.balance })
-        .eq('user_id', userId);
-      
-      logger.error(`Failed to create position:`, insertError);
-      throw new Error(`Failed to create position: ${insertError.message}`);
+    if (error) {
+      // Map database errors to application errors
+      if (error.message?.includes('Insufficient margin')) {
+        throw new InsufficientFundsError(error.message);
+      }
+      logger.error(`Transaction failed for order:`, error);
+      throw new Error(`Failed to execute order: ${error.message}`);
     }
 
-    logger.info(`Position created: ${positionId}`);
+    logger.info(`Position created atomically: ${positionId}`);
 
-    return this.mapDbPosition(newPosition);
+    return this.mapDbPosition(data);
   }
 
   async closePosition(
@@ -172,7 +128,7 @@ export class OrderExecutor {
   ): Promise<Position> {
     const supabase = getSupabase();
 
-    // Get position
+    // Get position to calculate PnL
     const { data: position, error: posError } = await supabase
       .from('positions')
       .select('*')
@@ -200,58 +156,27 @@ export class OrderExecutor {
       position.leverage
     );
 
-    // Update position to closed
-    const { data: closedPosition, error: updateError } = await supabase
-      .from('positions')
-      .update({
-        current_price: currentPrice,
-        unrealized_pnl: 0,
-        unrealized_pnl_percent: 0,
-        realized_pnl: pnl,
-        status: 'closed',
-        closed_at: new Date().toISOString(),
-      })
-      .eq('id', positionId)
-      .select()
-      .single();
+    const tradeId = uuidv4();
 
-    if (updateError) {
-      throw new Error(`Failed to close position: ${updateError.message}`);
-    }
-
-    // Update account balance - return margin + PnL
-    const { data: account } = await supabase
-      .from('accounts')
-      .select('balance')
-      .eq('user_id', userId)
-      .single();
-
-    if (account) {
-      const newBalance = account.balance + position.margin + pnl;
-      await supabase
-        .from('accounts')
-        .update({ balance: newBalance })
-        .eq('user_id', userId);
-      
-      logger.info(`Position closed. Returned margin ${position.margin} + PnL ${pnl}. New balance: ${newBalance}`);
-    }
-
-    // Record trade history
-    await supabase.from('trades').insert({
-      id: uuidv4(),
-      user_id: userId,
-      asset: position.asset,
-      side: position.side,
-      entry_price: position.entry_price,
-      exit_price: currentPrice,
-      size: position.size,
-      pnl,
-      pnl_percent: pnlPercent,
-      opened_at: position.opened_at,
-      closed_at: new Date().toISOString(),
+    // Close atomically via RPC — position update, balance return, and trade recording
+    // all happen in a single database transaction
+    const { data, error } = await supabase.rpc('close_position_atomic', {
+      p_position_id: positionId,
+      p_user_id: userId,
+      p_current_price: currentPrice,
+      p_pnl: pnl,
+      p_pnl_percent: pnlPercent,
+      p_trade_id: tradeId,
     });
 
-    return this.mapDbPosition(closedPosition);
+    if (error) {
+      logger.error(`Transaction failed for close position:`, error);
+      throw new Error(`Failed to close position: ${error.message}`);
+    }
+
+    logger.info(`Position closed atomically. PnL: ${pnl}`);
+
+    return this.mapDbPosition(data);
   }
 
   private mapDbPosition(db: Record<string, unknown>): Position {
