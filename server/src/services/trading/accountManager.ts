@@ -103,38 +103,22 @@ export class AccountManager {
       .eq('user_id', userId)
       .eq('status', 'open');
 
-    // Reset account balance and increment reset count
-    const { data: account, error } = await supabase
+    // Get current reset count
+    const { data: currentAccount } = await supabase
+      .from('accounts')
+      .select('reset_count')
+      .eq('user_id', userId)
+      .single();
+
+    // Reset account balance and increment reset count atomically
+    await supabase
       .from('accounts')
       .update({
         balance: TRADING_CONSTANTS.INITIAL_BALANCE,
         initial_balance: TRADING_CONSTANTS.INITIAL_BALANCE,
-        reset_count: supabase.rpc ? undefined : undefined,
+        reset_count: (currentAccount?.reset_count || 0) + 1,
       })
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    // Increment reset count separately
-    await supabase.rpc('increment_reset_count', { user_id_param: userId });
-
-    if (error || !account) {
-      // If RPC doesn't exist, do it manually
-      const { data: currentAccount } = await supabase
-        .from('accounts')
-        .select('reset_count')
-        .eq('user_id', userId)
-        .single();
-
-      await supabase
-        .from('accounts')
-        .update({
-          balance: TRADING_CONSTANTS.INITIAL_BALANCE,
-          initial_balance: TRADING_CONSTANTS.INITIAL_BALANCE,
-          reset_count: (currentAccount?.reset_count || 0) + 1,
-        })
-        .eq('user_id', userId);
-    }
+      .eq('user_id', userId);
 
     // Clear trade history
     await supabase.from('trades').delete().eq('user_id', userId);

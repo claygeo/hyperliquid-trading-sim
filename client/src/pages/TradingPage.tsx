@@ -114,12 +114,7 @@ export function TradingPage() {
 
   const handleClosePosition = async (positionId: string, closeType: 'market' | 'limit' = 'market') => {
     if (closeType === 'limit') {
-      addToast({
-        type: 'info',
-        title: 'Coming Soon',
-        message: 'Limit close orders are not yet available',
-      });
-      return;
+      return; // Limit close not supported — button is visually disabled
     }
     
     setClosingPositionId(positionId);
@@ -288,13 +283,12 @@ export function TradingPage() {
             </div>
             {/* Text link close buttons like Hyperliquid */}
             <div className="flex items-center justify-center gap-3 pt-1">
-              <button
-                onClick={() => handleClosePosition(position.id, 'limit')}
-                disabled={isClosing}
-                className="text-[11px] text-gray-400 hover:text-white transition-colors touch-manipulation disabled:opacity-50"
+              <span
+                className="text-[11px] text-gray-600 cursor-not-allowed select-none"
+                title="Limit close orders are not supported"
               >
                 Limit Close
-              </button>
+              </span>
               <span className="text-gray-600">|</span>
               <button
                 onClick={() => handleClosePosition(position.id, 'market')}

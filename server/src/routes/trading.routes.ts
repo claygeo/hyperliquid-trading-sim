@@ -207,10 +207,9 @@ tradingRoutes.get('/account', authMiddleware, async (req: AuthenticatedRequest, 
   }
 });
 
-// Get limit orders (placeholder - returns empty for now as we only support market orders)
+// Get limit orders (market orders only — returns empty array)
 tradingRoutes.get('/limit-orders', authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
-    // Return empty array - limit orders not implemented yet
     res.json([]);
   } catch (error) {
     logger.error('Get limit orders error:', error);

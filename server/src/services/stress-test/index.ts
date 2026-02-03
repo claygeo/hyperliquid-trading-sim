@@ -14,6 +14,7 @@ export class StressTestService {
   private messageCount = 0;
   private startTime = 0;
   private tpsHistory: number[] = [];
+  private lastBroadcastLatency = 0;
   private basePrices: Map<string, number> = new Map([
     ['BTC', 87500],
     ['ETH', 2900],
@@ -132,11 +133,14 @@ export class StressTestService {
       isSimulated: true,
     };
 
+    // Measure actual broadcast latency
+    const broadcastStart = performance.now();
     this.wss.broadcast({
       type: 'trade',
       channel: `trades:${asset}`,
       data: trade,
     });
+    this.lastBroadcastLatency = performance.now() - broadcastStart;
 
     // Also update orderbook occasionally
     if (Math.random() > 0.7) {
@@ -189,7 +193,7 @@ export class StressTestService {
       ),
       peak: Math.round(Math.max(...this.tpsHistory)),
       messageCount: this.messageCount,
-      latency: Math.random() * 5, // Simulated latency
+      latency: this.lastBroadcastLatency,
     };
 
     this.wss.broadcast({

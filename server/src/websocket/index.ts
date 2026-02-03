@@ -3,6 +3,7 @@ import { Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../lib/logger.js';
 import { WS_CONSTANTS } from '../config/constants.js';
+import { getSupabase } from '../lib/supabase.js';
 import type { WSMessage, ClientConnection } from '../types/websocket.js';
 
 export class WebSocketServer {
@@ -17,7 +18,7 @@ export class WebSocketServer {
   }
 
   private setupServer(): void {
-    this.wss.on('connection', (ws, req) => {
+    this.wss.on('connection', async (ws, req) => {
       const clientId = uuidv4();
       const connection: ClientConnection = {
         id: clientId,
@@ -26,12 +27,20 @@ export class WebSocketServer {
         lastPing: Date.now(),
       };
 
-      // Extract token from query string if present
+      // Validate token from query string if present
       const url = new URL(req.url || '', `http://${req.headers.host}`);
       const token = url.searchParams.get('token');
       if (token) {
-        // TODO: Validate token and set userId
-        // connection.userId = validateToken(token);
+        try {
+          const supabase = getSupabase();
+          const { data: { user }, error } = await supabase.auth.getUser(token);
+          if (!error && user) {
+            connection.userId = user.id;
+            logger.debug(`WebSocket authenticated for user ${user.id}`);
+          }
+        } catch (error) {
+          logger.debug('WebSocket token validation failed, continuing as anonymous');
+        }
       }
 
       this.clients.set(clientId, { ws, connection });
