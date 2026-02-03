@@ -8,6 +8,9 @@ import { UI_CONSTANTS } from '../config/constants';
 // Track in-flight requests to prevent duplicates
 const pendingRequests = new Map<string, Promise<Candle[]>>();
 
+// Track active handler cleanup functions to prevent memory leaks
+let activeHandlerCleanups: Array<() => void> = [];
+
 interface MarketDataState {
   // Current asset
   selectedAsset: string;
@@ -260,12 +263,19 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
       }
     };
 
-    wsClient.on('candle', handleCandle);
-    wsClient.on('orderbook', handleOrderbook);
-    wsClient.on('trade', handleTrade);
+    // Register handlers and store cleanup functions to prevent memory leaks
+    const cleanupCandle = wsClient.on('candle', handleCandle);
+    const cleanupOrderbook = wsClient.on('orderbook', handleOrderbook);
+    const cleanupTrade = wsClient.on('trade', handleTrade);
+
+    activeHandlerCleanups.push(cleanupCandle, cleanupOrderbook, cleanupTrade);
   },
 
   unsubscribeFromAsset: (asset) => {
+    // Remove event handlers to prevent memory leak
+    activeHandlerCleanups.forEach((cleanup) => cleanup());
+    activeHandlerCleanups = [];
+
     wsClient.unsubscribe(`candles:${asset}`);
     wsClient.unsubscribe(`orderbook:${asset}`);
     wsClient.unsubscribe(`trades:${asset}`);
