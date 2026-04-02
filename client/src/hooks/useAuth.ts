@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { wsClient } from '../lib/websocket';
-import type { User, Profile, AuthState } from '../types/user';
+import type { AuthState } from '../types/user';
 
 // Generate a fake email from username for Supabase auth
 const usernameToEmail = (username: string) => `${username.toLowerCase()}@hypersim.local`;
@@ -18,7 +18,7 @@ interface AuthStore extends AuthState {
 
 export const useAuthStore = create<AuthStore>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       user: null,
       profile: null,
       isAuthenticated: false,

@@ -6,7 +6,7 @@ export function errorMiddleware(
   error: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) {
   logger.error(`${req.method} ${req.path}: ${error.message}`);
 

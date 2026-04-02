@@ -65,6 +65,7 @@ export function OrderForm({
     if (orderType === 'limit' && !limitPrice && currentPrice > 0) {
       setLimitPrice(currentPrice.toFixed(2));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPrice, orderType]);
 
   useEffect(() => {

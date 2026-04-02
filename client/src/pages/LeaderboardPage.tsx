@@ -11,6 +11,7 @@ export function LeaderboardPage() {
 
   useEffect(() => {
     fetchLeaderboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const totalPages = Math.ceil(total / pageSize);

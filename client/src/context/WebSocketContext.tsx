@@ -28,8 +28,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     connect();
 
     const handleConnect = () => setIsConnected(true);
-    const handleDisconnect = () => setIsConnected(false);
-
     wsClient.on('connected', handleConnect);
 
     return () => {
@@ -53,6 +51,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWS() {
   const context = useContext(WebSocketContext);
   if (!context) {

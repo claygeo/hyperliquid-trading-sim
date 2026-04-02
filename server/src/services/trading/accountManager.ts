@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getSupabase } from '../../lib/supabase.js';
-import { NotFoundError } from '../../lib/errors.js';
 import { TRADING_CONSTANTS } from '../../config/constants.js';
 import { PnlCalculator } from './pnlCalculator.js';
 import type { Account } from '../../types/trading.js';

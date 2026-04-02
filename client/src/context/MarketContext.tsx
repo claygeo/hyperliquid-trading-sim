@@ -32,6 +32,7 @@ export function MarketProvider({ children }: { children: ReactNode }) {
     return () => {
       store.unsubscribeFromAsset(store.selectedAsset);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, store.selectedAsset]);
 
   return (
@@ -53,6 +54,7 @@ export function MarketProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useMarket() {
   const context = useContext(MarketContext);
   if (!context) {

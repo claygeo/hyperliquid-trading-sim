@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { formatUSD } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 import type { LimitOrder } from '../../types/trading';
 import { Spinner } from '../ui/Spinner';

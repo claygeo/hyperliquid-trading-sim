@@ -67,7 +67,7 @@ authRoutes.post('/register', validateBody(registerSchema), async (req, res) => {
     });
 
     // Generate session
-    const { data: session, error: sessionError } = await supabase.auth.admin.generateLink({
+    await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
     });

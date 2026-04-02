@@ -11,7 +11,7 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const { autoConnect = true, onMessage, onConnect, onDisconnect, onError } = options;
+  const { autoConnect = true, onMessage, onConnect, onError } = options;
   const [isConnected, setIsConnected] = useState(wsClient.isConnected);
   const handlersRef = useRef<Map<string, (message: WSMessage) => void>>(new Map());
 
