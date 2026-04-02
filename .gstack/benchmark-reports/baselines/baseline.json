@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-04-01T00:00:00Z",
+  "project": "hyperliquid-trading-sim",
+  "buildTool": "vite@5.4.21",
+  "buildTimeSeconds": 3.88,
+  "modulesTransformed": 142,
+  "chunks": {
+    "react-vendor": { "rawKB": 162.31, "gzipKB": 53.01 },
+    "supabase": { "rawKB": 171.15, "gzipKB": 44.24 },
+    "charts": { "rawKB": 162.45, "gzipKB": 51.83 },
+    "state": { "rawKB": 3.64, "gzipKB": 1.62 },
+    "index": { "rawKB": 114.22, "gzipKB": 28.29 },
+    "css": { "rawKB": 37.71, "gzipKB": 7.62 }
+  },
+  "totals": {
+    "jsRawKB": 613.77,
+    "jsGzipKB": 178.99,
+    "cssRawKB": 37.71,
+    "cssGzipKB": 7.62,
+    "transferGzipKB": 186.61
+  },
+  "budgets": {
+    "totalJsGzip": { "thresholdKB": 200, "actualKB": 178.99, "pass": true },
+    "largestChunkRaw": { "thresholdKB": 500, "actualKB": 171.15, "pass": true },
+    "appCodeGzip": { "thresholdKB": 50, "actualKB": 28.29, "pass": true },
+    "cssGzip": { "thresholdKB": 20, "actualKB": 7.62, "pass": true },
+    "buildTimeSeconds": { "threshold": 10, "actual": 3.88, "pass": true }
+  },
+  "serverTypeCheck": {
+    "errors": 0,
+    "pass": true
+  },
+  "warnings": []
+}
