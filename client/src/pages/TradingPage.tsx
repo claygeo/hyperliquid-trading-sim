@@ -56,6 +56,7 @@ export function TradingPage() {
 
   useEffect(() => {
     fetchAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const positionsWithLivePnl: Position[] = positions.map((position) => {
@@ -83,10 +84,12 @@ export function TradingPage() {
         subscribeToPositions();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, selectedAsset, isAuthenticated]);
 
   useEffect(() => {
     fetchCandles(selectedAsset, selectedTimeframe);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -95,6 +98,7 @@ export function TradingPage() {
       fetchAccount();
       fetchStats();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   const handlePlaceOrder = async (order: Parameters<typeof placeOrder>[0]) => {
@@ -168,7 +172,7 @@ export function TradingPage() {
     setLimitPriceFromOrderbook(price);
   }, []);
 
-  const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets, searchQuery]);
+  const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets]);
   const openPositions = positions.filter(p => p.status === 'open');
 
   // Trophy Icon - Gray to match unselected nav items

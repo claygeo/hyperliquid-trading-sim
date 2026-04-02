@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api } from '../lib/api';
 import type { Account } from '../types/trading';
 import type { UserStats } from '../types/user';
-import { TRADING_CONSTANTS } from '../config/constants';
+
 
 interface AccountState {
   account: Account | null;

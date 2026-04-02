@@ -285,7 +285,7 @@ export class BinanceKlineService {
 
   // Close all connections
   disconnect(): void {
-    for (const [streamName, ws] of this.connections) {
+    for (const [, ws] of this.connections) {
       ws.close();
     }
     this.connections.clear();

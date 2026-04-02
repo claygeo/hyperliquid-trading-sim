@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { config } from './config/index.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { rateLimitMiddleware } from './middleware/rateLimit.middleware.js';
 import { authRoutes } from './routes/auth.routes.js';

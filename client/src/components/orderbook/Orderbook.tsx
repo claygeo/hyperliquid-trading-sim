@@ -11,7 +11,7 @@ interface OrderbookProps {
   onPriceClick?: (price: number) => void;
 }
 
-export function Orderbook({ orderbook, asset, isLoading, compact = false, onPriceClick }: OrderbookProps) {
+export function Orderbook({ orderbook, asset, isLoading: _isLoading, compact = false, onPriceClick }: OrderbookProps) {
   // Show loading or empty state
   if (!orderbook || (orderbook.bids.length === 0 && orderbook.asks.length === 0)) {
     return (

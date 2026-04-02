@@ -134,7 +134,7 @@ export class WebSocketServer {
       if (message.channel) {
         if (!connection.subscriptions.has(message.channel)) {
           // Check for wildcard subscriptions
-          const [type, asset] = message.channel.split(':');
+          const [type] = message.channel.split(':');
           if (!connection.subscriptions.has(`${type}:*`)) {
             continue;
           }

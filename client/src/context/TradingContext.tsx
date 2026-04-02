@@ -30,12 +30,14 @@ export function TradingProvider({ children }: { children: ReactNode }) {
     if (isConnected) {
       positionsStore.subscribeToPositions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected]);
 
   useEffect(() => {
     accountStore.fetchAccount();
     accountStore.fetchStats();
     positionsStore.fetchPositions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshData = async () => {
@@ -67,6 +69,7 @@ export function TradingProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTrading() {
   const context = useContext(TradingContext);
   if (!context) {

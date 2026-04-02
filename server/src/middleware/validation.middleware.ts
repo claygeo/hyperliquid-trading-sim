@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { ValidationError } from '../lib/errors.js';
 
 export function validateBody<T extends z.ZodSchema>(schema: T) {
   return (req: Request, res: Response, next: NextFunction) => {
