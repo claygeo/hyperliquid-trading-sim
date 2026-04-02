@@ -30,6 +30,7 @@ A full-stack paper trading platform powered by real-time Hyperliquid and Binance
 - [Development](#development)
 - [Testing](#testing)
 - [Quality](#quality)
+- [Security](#security)
 - [Deployment](#deployment)
 - [Project Structure](#project-structure)
 
@@ -400,6 +401,22 @@ Build benchmarked April 2026. All budgets passing.
 | Build time | < 10s | 3.9s | PASS |
 
 Total gzip transfer: **187 KB** (JS + CSS). 142 modules transformed in 3.9s. Code-split into 4 vendor chunks for optimal caching.
+
+---
+
+## Security
+
+| Layer | Implementation |
+|-------|---------------|
+| Authentication | Supabase Auth with JWT Bearer tokens |
+| Authorization | Row Level Security (RLS) on all PostgreSQL tables |
+| Input Validation | Zod schemas on all API endpoints |
+| HTTP Security | Helmet headers, CORS allowlist (no wildcards) |
+| Rate Limiting | 100 req/min per IP with `X-RateLimit-*` headers |
+| Database | Atomic stored procedures with `FOR UPDATE` row locking |
+| Secrets | All credentials via environment variables, `.env` files gitignored |
+
+---
 
 ## Deployment
 
