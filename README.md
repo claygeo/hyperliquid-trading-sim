@@ -13,8 +13,25 @@ A full-stack paper trading platform powered by real-time Hyperliquid and Binance
 
 ---
 
+## Screenshots
+
+**Trading View**
+<img width="1280" alt="Trading view with live BTC chart, orderbook, and order form" src="docs/screenshots/trading.png" />
+
+**Leaderboard**
+<img width="1280" alt="Global leaderboard ranked by PnL, win rate, and trade count" src="docs/screenshots/leaderboard.png" />
+
+**Login**
+<img width="1280" alt="Login page" src="docs/screenshots/login.png" />
+
+**Register**
+<img width="1280" alt="Registration page with $100k starting balance" src="docs/screenshots/register.png" />
+
+---
+
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
