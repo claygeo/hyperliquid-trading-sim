@@ -47,8 +47,8 @@ leaderboardRoutes.post('/sync', authMiddleware, async (req: AuthenticatedRequest
   }
 });
 
-// Sync all users' leaderboard stats (admin function)
-leaderboardRoutes.post('/sync-all', async (req, res) => {
+// Sync all users' leaderboard stats (admin function, requires auth)
+leaderboardRoutes.post('/sync-all', authMiddleware, async (req, res) => {
   try {
     await leaderboardService.syncAllUsers();
     res.json({ success: true, message: 'All leaderboard stats synced' });

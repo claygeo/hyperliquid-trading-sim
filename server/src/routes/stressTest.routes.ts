@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validation.middleware.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 import { logger } from '../lib/logger.js';
 import type { StressTestService } from '../services/stress-test/index.js';
 
@@ -17,7 +18,7 @@ const speedSchema = z.object({
   speed: z.enum(['off', 'slow', 'medium', 'fast']),
 });
 
-stressTestRoutes.post('/speed', validateBody(speedSchema), async (req, res) => {
+stressTestRoutes.post('/speed', authMiddleware, validateBody(speedSchema), async (req, res) => {
   try {
     const { speed } = req.body;
 
