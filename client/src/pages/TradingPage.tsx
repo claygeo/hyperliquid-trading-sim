@@ -6,6 +6,7 @@ import { RecentTrades } from '../components/trades/RecentTrades';
 import { OrderForm } from '../components/trading/OrderForm';
 import { AccountStats } from '../components/trading/AccountStats';
 import { OpenOrders } from '../components/trading/OpenOrders';
+import { SuggestedTrades } from '../components/trading/SuggestedTrades';
 import { MobileNav } from '../components/ui/MobileNav';
 import { useMarketDataStore } from '../hooks/useMarketData';
 import { usePositionsStore } from '../hooks/usePositions';
@@ -633,6 +634,13 @@ export function TradingPage() {
               }}
             />
           )}
+
+          <SuggestedTrades
+            selectedAsset={selectedAsset}
+            onTradeSelect={(trade) => {
+              setSelectedAsset(trade.coin);
+            }}
+          />
 
           <OrderForm
             selectedAsset={selectedAsset}

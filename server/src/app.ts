@@ -9,6 +9,7 @@ import { marketRoutes } from './routes/market.routes.js';
 import { leaderboardRoutes } from './routes/leaderboard.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
 import { stressTestRoutes } from './routes/stressTest.routes.js';
+import { suggestionsRoutes } from './routes/suggestions.routes.js';
 
 export const app = express();
 
@@ -43,6 +44,7 @@ app.use('/api/market', marketRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/stress-test', stressTestRoutes);
+app.use('/api/suggestions', suggestionsRoutes);
 
 // Error handling
 app.use(errorMiddleware);
