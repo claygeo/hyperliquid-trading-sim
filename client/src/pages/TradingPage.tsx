@@ -222,6 +222,11 @@ export function TradingPage() {
                 )}>
                   {position.leverage}x
                 </span>
+                {position.source === 'signal' && (
+                  <span className="text-[8px] px-1 py-0.5 rounded font-medium text-[#00d4ff] bg-[#00d4ff]/10 leading-none">
+                    SIG
+                  </span>
+                )}
               </div>
             </div>
             

@@ -3,6 +3,8 @@ export type OrderType = 'market' | 'limit';
 export type PositionStatus = 'open' | 'closed' | 'liquidated';
 export type LimitOrderStatus = 'pending' | 'filled' | 'cancelled' | 'expired';
 
+export type PositionSource = 'manual' | 'signal';
+
 export interface Position {
   id: string;
   userId: string;
@@ -18,6 +20,8 @@ export interface Position {
   unrealizedPnlPercent: number;
   realizedPnl: number;
   status: PositionStatus;
+  source: PositionSource;
+  signalId?: string;
   openedAt: string;
   closedAt?: string;
 }
@@ -103,6 +107,8 @@ export interface PlaceOrderRequest {
   leverage: number;
   type?: OrderType;
   price?: number; // Required for limit orders
+  source?: PositionSource;
+  signalId?: string;
 }
 
 export interface ClosePositionRequest {

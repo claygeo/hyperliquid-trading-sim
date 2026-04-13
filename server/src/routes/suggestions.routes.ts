@@ -7,6 +7,7 @@
 
 import { Router } from 'express';
 import { trackerBridge } from '../services/tracker-bridge/index.js';
+import { ExternalServiceError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 
 export const suggestionsRoutes = Router();
@@ -32,6 +33,13 @@ suggestionsRoutes.get('/', async (req, res) => {
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof ExternalServiceError) {
+      logger.error(`Tracker bridge error: ${error.message}`);
+      return res.status(502).json({
+        error: 'Tracker offline',
+        details: error.message,
+      });
+    }
     logger.error('Suggestions route error:', error);
     res.status(500).json({ error: 'Failed to fetch suggestions' });
   }
@@ -47,6 +55,13 @@ suggestionsRoutes.get('/stats', async (req, res) => {
     const stats = await trackerBridge.getTrackerStats();
     res.json({ enabled: true, stats });
   } catch (error) {
+    if (error instanceof ExternalServiceError) {
+      logger.error(`Tracker bridge stats error: ${error.message}`);
+      return res.status(502).json({
+        error: 'Tracker offline',
+        details: error.message,
+      });
+    }
     logger.error('Suggestions stats error:', error);
     res.status(500).json({ error: 'Failed to fetch stats' });
   }

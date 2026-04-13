@@ -149,6 +149,8 @@ export class PositionManager {
       unrealizedPnlPercent: db.unrealized_pnl_percent as number,
       realizedPnl: db.realized_pnl as number,
       status: db.status as Position['status'],
+      source: (db.source as Position['source']) || 'manual',
+      signalId: db.signal_id as string | undefined,
       openedAt: db.opened_at as string,
       closedAt: db.closed_at as string | undefined,
     };

@@ -9,10 +9,19 @@ export const TRADING_CONSTANTS = {
   LIQUIDATION_THRESHOLD: 0.8,
 } as const;
 
+// Simplified linear slippage model for simulation purposes.
+// Real slippage is nonlinear and order-book dependent. This demonstrates
+// the execution architecture, not a production-grade market microstructure model.
+export const SLIPPAGE_BPS_PER_10K = 5; // 0.05% per $10k notional
+
 export const WS_CONSTANTS = {
   HEARTBEAT_INTERVAL: 30000,
   RECONNECT_DELAY: 3000,
   MAX_RECONNECT_ATTEMPTS: 10,
+  RATE_LIMIT: {
+    MAX_MESSAGES_PER_SECOND: 20,
+    WINDOW_MS: 1000,
+  },
 } as const;
 
 export const STRESS_TEST_CONFIG = {
