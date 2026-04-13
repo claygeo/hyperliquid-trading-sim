@@ -9,8 +9,47 @@
 // ============================================
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
+import { ExternalServiceError } from '../../lib/errors.js';
+import { eventService } from '../events/index.js';
+
+// Zod schemas for external data validation
+const signalRowSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  coin: z.string(),
+  direction: z.enum(['long', 'short']),
+  signal_tier: z.string().nullable().optional(),
+  confidence: z.number().nullable().optional(),
+  avg_entry_price: z.number().nullable().optional(),
+  current_price: z.number().nullable().optional(),
+  stop_loss: z.number().nullable().optional(),
+  take_profit_1: z.number().nullable().optional(),
+  take_profit_2: z.number().nullable().optional(),
+  take_profit_3: z.number().nullable().optional(),
+  trader_count: z.number().nullable().optional(),
+  created_at: z.string(),
+});
+
+const tradeRowSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  coin: z.string(),
+  direction: z.enum(['long', 'short']),
+  confidence_at_entry: z.number().nullable().optional(),
+  user_entry_price: z.number().nullable().optional(),
+  current_price: z.number().nullable().optional(),
+  stop_loss: z.number().nullable().optional(),
+  take_profit_1: z.number().nullable().optional(),
+  take_profit_2: z.number().nullable().optional(),
+  take_profit_3: z.number().nullable().optional(),
+  kelly_fraction: z.number().nullable().optional(),
+  position_size_usd: z.number().nullable().optional(),
+  trader_address: z.string().nullable().optional(),
+  trader_tier: z.string().nullable().optional(),
+  opened_at: z.string(),
+  source: z.string(),
+});
 
 export interface SuggestedTrade {
   id: string;
@@ -34,9 +73,12 @@ export interface SuggestedTrade {
   source: string;
 }
 
+const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 export class TrackerBridge {
   private client: SupabaseClient | null = null;
   private cache: { data: SuggestedTrade[]; expiresAt: number } | null = null;
+  private lastSeenSignalIds: Set<string> = new Set();
   private readonly CACHE_TTL_MS = 30_000; // 30 seconds
 
   constructor() {
@@ -75,12 +117,35 @@ export class TrackerBridge {
       // Sort by confidence descending
       suggestions.sort((a, b) => b.confidence - a.confidence);
 
+      // Emit signal_received only for newly-appeared signals (deduplicate across refreshes)
+      const currentSignalIds = new Set(signals.map(s => s.id));
+      for (const s of signals) {
+        if (!this.lastSeenSignalIds.has(s.id)) {
+          eventService.emit('signal_received', {
+            signalId: s.id,
+            coin: s.coin,
+            direction: s.direction,
+            confidence: s.confidence,
+            entryPrice: s.entryPrice,
+            source: s.source,
+          }).catch(() => {}); // Non-blocking for bridge reads
+        }
+      }
+      this.lastSeenSignalIds = currentSignalIds;
+
       this.cache = { data: suggestions, expiresAt: Date.now() + this.CACHE_TTL_MS };
       return suggestions;
     } catch (error) {
+      if (error instanceof ExternalServiceError) throw error;
       logger.error('[TrackerBridge] Error fetching suggestions:', error);
+      // Return stale cache on error
       return this.cache?.data || [];
     }
+  }
+
+  private isStale(dateStr: string): boolean {
+    const created = new Date(dateStr).getTime();
+    return Date.now() - created > STALENESS_THRESHOLD_MS;
   }
 
   private async getActiveSignals(): Promise<SuggestedTrade[]> {
@@ -93,31 +158,45 @@ export class TrackerBridge {
       .order('confidence', { ascending: false });
 
     if (error) {
-      logger.error('[TrackerBridge] Error fetching signals:', error.message);
-      return [];
+      throw new ExternalServiceError('TrackerBridge', `Failed to fetch signals: ${error.message}`);
     }
 
-    return (data || []).map(s => ({
-      id: `signal-${s.id}`,
-      type: 'signal' as const,
-      coin: s.coin,
-      direction: s.direction,
-      confidence: s.confidence || 0,
-      entryPrice: s.avg_entry_price || 0,
-      currentPrice: s.current_price || s.avg_entry_price || 0,
-      stopLoss: s.stop_loss,
-      takeProfit1: s.take_profit_1,
-      takeProfit2: s.take_profit_2,
-      takeProfit3: s.take_profit_3,
-      traderCount: s.trader_count || 1,
-      signalTier: s.signal_tier,
-      kellyFraction: null,
-      positionSizeUsd: null,
-      traderAddress: null,
-      traderTier: null,
-      openedAt: s.created_at,
-      source: 'convergence',
-    }));
+    const validated: SuggestedTrade[] = [];
+    for (const row of data || []) {
+      const parsed = signalRowSchema.safeParse(row);
+      if (!parsed.success) {
+        logger.warn('[TrackerBridge] Invalid signal row, skipping:', parsed.error.message);
+        continue;
+      }
+      const s = parsed.data;
+
+      // Filter stale signals (older than 24h)
+      if (this.isStale(s.created_at)) continue;
+
+      validated.push({
+        id: `signal-${s.id}`,
+        type: 'signal',
+        coin: s.coin,
+        direction: s.direction,
+        confidence: s.confidence || 0,
+        entryPrice: s.avg_entry_price || 0,
+        currentPrice: s.current_price || s.avg_entry_price || 0,
+        stopLoss: s.stop_loss ?? null,
+        takeProfit1: s.take_profit_1 ?? null,
+        takeProfit2: s.take_profit_2 ?? null,
+        takeProfit3: s.take_profit_3 ?? null,
+        traderCount: s.trader_count || 1,
+        signalTier: s.signal_tier ?? null,
+        kellyFraction: null,
+        positionSizeUsd: null,
+        traderAddress: null,
+        traderTier: null,
+        openedAt: s.created_at,
+        source: 'convergence',
+      });
+    }
+
+    return validated;
   }
 
   private async getActivePositionTrades(): Promise<SuggestedTrade[]> {
@@ -133,31 +212,45 @@ export class TrackerBridge {
       .limit(50);
 
     if (error) {
-      logger.error('[TrackerBridge] Error fetching position trades:', error.message);
-      return [];
+      throw new ExternalServiceError('TrackerBridge', `Failed to fetch trades: ${error.message}`);
     }
 
-    return (data || []).map(t => ({
-      id: `trade-${t.id}`,
-      type: 'position' as const,
-      coin: t.coin,
-      direction: t.direction,
-      confidence: t.confidence_at_entry || 0,
-      entryPrice: t.user_entry_price || 0,
-      currentPrice: t.current_price || t.user_entry_price || 0,
-      stopLoss: t.stop_loss,
-      takeProfit1: t.take_profit_1,
-      takeProfit2: t.take_profit_2,
-      takeProfit3: t.take_profit_3,
-      traderCount: 1,
-      signalTier: null,
-      kellyFraction: t.kelly_fraction,
-      positionSizeUsd: t.position_size_usd,
-      traderAddress: t.trader_address,
-      traderTier: t.trader_tier,
-      openedAt: t.opened_at,
-      source: t.source === 'system' ? 'signal_trade' : 'position_trade',
-    }));
+    const validated: SuggestedTrade[] = [];
+    for (const row of data || []) {
+      const parsed = tradeRowSchema.safeParse(row);
+      if (!parsed.success) {
+        logger.warn('[TrackerBridge] Invalid trade row, skipping:', parsed.error.message);
+        continue;
+      }
+      const t = parsed.data;
+
+      // Filter stale trades (older than 24h)
+      if (this.isStale(t.opened_at)) continue;
+
+      validated.push({
+        id: `trade-${t.id}`,
+        type: 'position',
+        coin: t.coin,
+        direction: t.direction,
+        confidence: t.confidence_at_entry || 0,
+        entryPrice: t.user_entry_price || 0,
+        currentPrice: t.current_price || t.user_entry_price || 0,
+        stopLoss: t.stop_loss ?? null,
+        takeProfit1: t.take_profit_1 ?? null,
+        takeProfit2: t.take_profit_2 ?? null,
+        takeProfit3: t.take_profit_3 ?? null,
+        traderCount: 1,
+        signalTier: null,
+        kellyFraction: t.kelly_fraction ?? null,
+        positionSizeUsd: t.position_size_usd ?? null,
+        traderAddress: t.trader_address ?? null,
+        traderTier: t.trader_tier ?? null,
+        openedAt: t.opened_at,
+        source: t.source === 'system' ? 'signal_trade' : 'position_trade',
+      });
+    }
+
+    return validated;
   }
 
   async getTrackerStats(): Promise<{
@@ -170,13 +263,12 @@ export class TrackerBridge {
     if (!this.client) return null;
 
     try {
-      const [signals, traders, closedSignals] = await Promise.all([
+      const [signals, traders, closedSignals, activeCount] = await Promise.all([
         this.client.from('quality_signals').select('id', { count: 'exact', head: true }),
         this.client.from('trader_quality').select('id', { count: 'exact', head: true }).eq('is_tracked', true),
         this.client.from('quality_signals').select('outcome').eq('is_active', false).not('outcome', 'is', null),
+        this.client.from('quality_signals').select('id', { count: 'exact', head: true }).eq('is_active', true),
       ]);
-
-      const activeCount = await this.client.from('quality_signals').select('id', { count: 'exact', head: true }).eq('is_active', true);
 
       let signalWinRate: number | null = null;
       if (closedSignals.data && closedSignals.data.length > 0) {
@@ -189,11 +281,10 @@ export class TrackerBridge {
         activeSignals: activeCount.count || 0,
         trackedTraders: traders.count || 0,
         signalWinRate,
-        positionWinRate: null, // TODO: compute from user_trades
+        positionWinRate: null,
       };
     } catch (error) {
-      logger.error('[TrackerBridge] Error fetching stats:', error);
-      return null;
+      throw new ExternalServiceError('TrackerBridge', `Failed to fetch stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }
