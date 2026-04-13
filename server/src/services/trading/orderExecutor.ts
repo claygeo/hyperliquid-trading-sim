@@ -172,7 +172,10 @@ export class OrderExecutor {
     const exitSide = position.side === 'long' ? 'short' : 'long'; // Closing reverses direction
     const slippedExitPrice = this.pnlCalculator.applySlippage(currentPrice, exitNotional, exitSide as OrderSide);
 
-    // Calculate fees: entry fee was already "paid" at open, exit fee deducted now
+    // Fee model: both entry and exit fees are deducted from PnL at close time.
+    // Entry fee is NOT deducted from balance at open (only margin is). This matches
+    // how most perp exchanges work: fees come from realized PnL, not upfront balance.
+    // This is not double-counting. The entry fee is calculated once here, not at open.
     const entryNotional = position.size * position.entry_price;
     const entryFee = this.pnlCalculator.calculateFee(entryNotional, TRADING_CONSTANTS.TAKER_FEE);
     const exitFee = this.pnlCalculator.calculateFee(exitNotional, TRADING_CONSTANTS.TAKER_FEE);

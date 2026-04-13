@@ -13,13 +13,17 @@ replayRoutes.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => 
     const from = req.query.from as string | undefined;
     const to = req.query.to as string | undefined;
     const type = req.query.type as string | undefined;
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const MAX_REPLAY_LIMIT = 1000;
+    const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const limit = rawLimit != null && !isNaN(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, MAX_REPLAY_LIMIT)
+      : undefined;
 
     const events = await eventService.getEvents(userId, {
       from,
       to,
       type: type as EventType | undefined,
-      limit: limit && !isNaN(limit) ? limit : undefined,
+      limit,
     });
 
     res.json({ events, count: events.length });

@@ -87,7 +87,8 @@ tradingRoutes.get('/positions', authMiddleware, async (req: AuthenticatedRequest
     
     // Update positions with current prices
     const updatedPositions = positions.map((position) => {
-      const currentPrice = getCurrentPrice(position.asset) ?? position.entryPrice;
+      const livePrice = getCurrentPrice(position.asset);
+      const currentPrice = livePrice ?? position.entryPrice;
       const priceDiff = currentPrice - position.entryPrice;
       const direction = position.side === 'long' ? 1 : -1;
       const unrealizedPnl = priceDiff * position.size * direction;
@@ -98,6 +99,7 @@ tradingRoutes.get('/positions', authMiddleware, async (req: AuthenticatedRequest
         currentPrice,
         unrealizedPnl,
         unrealizedPnlPercent,
+        priceStale: livePrice === null, // true when price feed is unavailable
       };
     });
     
