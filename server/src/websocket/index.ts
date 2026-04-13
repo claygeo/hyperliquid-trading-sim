@@ -6,9 +6,14 @@ import { WS_CONSTANTS } from '../config/constants.js';
 import { getSupabase } from '../lib/supabase.js';
 import type { WSMessage, ClientConnection } from '../types/websocket.js';
 
+interface RateLimitState {
+  messageCount: number;
+  windowStart: number;
+}
+
 export class WebSocketServer {
   private wss: WSServer;
-  private clients: Map<string, { ws: WebSocket; connection: ClientConnection }> = new Map();
+  private clients: Map<string, { ws: WebSocket; connection: ClientConnection; rateLimit: RateLimitState }> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(server: Server) {
@@ -43,18 +48,38 @@ export class WebSocketServer {
         }
       }
 
-      this.clients.set(clientId, { ws, connection });
+      const rateLimit: RateLimitState = { messageCount: 0, windowStart: Date.now() };
+      this.clients.set(clientId, { ws, connection, rateLimit });
       logger.info(`Client connected: ${clientId}`);
 
       // Send connected message
       this.send(ws, { type: 'connected', data: { clientId } });
 
       ws.on('message', (data) => {
+        const client = this.clients.get(clientId);
+        if (!client) return;
+
+        // Rate limiting: per-connection message throttle
+        const now = Date.now();
+        const rl = client.rateLimit;
+        if (now - rl.windowStart >= WS_CONSTANTS.RATE_LIMIT.WINDOW_MS) {
+          rl.messageCount = 0;
+          rl.windowStart = now;
+        }
+        rl.messageCount++;
+
+        if (rl.messageCount > WS_CONSTANTS.RATE_LIMIT.MAX_MESSAGES_PER_SECOND) {
+          this.send(ws, { type: 'error', data: { code: 'RATE_LIMITED', message: 'Too many messages, disconnecting' } });
+          logger.warn(`Rate limited client ${clientId}: ${rl.messageCount} msgs in window`);
+          ws.close(1008, 'Rate limited');
+          return;
+        }
+
         try {
           const message: WSMessage = JSON.parse(data.toString());
           this.handleMessage(clientId, message);
         } catch (error) {
-          logger.error('Invalid WebSocket message:', error);
+          this.send(ws, { type: 'error', data: { code: 'INVALID_MESSAGE', message: 'Malformed JSON' } });
         }
       });
 

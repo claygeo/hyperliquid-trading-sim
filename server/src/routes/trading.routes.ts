@@ -6,7 +6,9 @@ import { OrderExecutor, PositionManager } from '../services/trading/index.js';
 import { LeaderboardService } from '../services/leaderboard/index.js';
 import { getSupabase } from '../lib/supabase.js';
 import { logger } from '../lib/logger.js';
+import { priceService } from '../services/price/index.js';
 import type { HyperliquidService } from '../services/hyperliquid/index.js';
+import { eventService } from '../services/events/index.js';
 
 export const tradingRoutes = Router();
 
@@ -14,6 +16,7 @@ let hyperliquidService: HyperliquidService | null = null;
 
 export function setHyperliquidService(service: HyperliquidService) {
   hyperliquidService = service;
+  priceService.setHyperliquidService(service);
 }
 
 const orderExecutor = new OrderExecutor();
@@ -25,25 +28,17 @@ const placeOrderSchema = z.object({
   side: z.enum(['long', 'short']),
   size: z.number().positive(),
   leverage: z.number().min(1).max(50),
+  source: z.enum(['manual', 'signal']).optional(),
+  signalId: z.string().optional(),
 });
 
 const positionIdSchema = z.object({
   id: z.string().uuid(),
 });
 
-// Helper to get current price from Hyperliquid or fallback
-function getCurrentPrice(asset: string): number {
-  if (hyperliquidService) {
-    const price = hyperliquidService.getPrice(asset);
-    if (price > 0) return price;
-  }
-  // Fallback prices if service unavailable
-  const fallbackPrices: Record<string, number> = {
-    BTC: 87500,
-    ETH: 2900,
-    SOL: 120,
-  };
-  return fallbackPrices[asset] || 100;
+// Get current price via PriceService (live WS → last known → null)
+function getCurrentPrice(asset: string): number | null {
+  return priceService.getCurrentPrice(asset);
 }
 
 // Place market order
@@ -53,17 +48,20 @@ tradingRoutes.post(
   validateBody(placeOrderSchema),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const { asset, side, size, leverage } = req.body;
+      const { asset, side, size, leverage, source, signalId } = req.body;
       const userId = req.userId!;
 
-      logger.info(`Order request: ${side} ${size} ${asset} @ ${leverage}x for user ${userId}`);
+      logger.info(`Order request: ${side} ${size} ${asset} @ ${leverage}x for user ${userId} (source: ${source || 'manual'})`);
 
       const currentPrice = getCurrentPrice(asset);
+      if (currentPrice === null) {
+        return res.status(503).json({ error: 'Price feed unavailable', details: `No price data for ${asset}` });
+      }
       logger.info(`Current price for ${asset}: ${currentPrice}`);
 
       const position = await orderExecutor.executeMarketOrder(
         userId,
-        { asset, side, size, leverage },
+        { asset, side, size, leverage, source, signalId },
         currentPrice
       );
 
@@ -89,12 +87,12 @@ tradingRoutes.get('/positions', authMiddleware, async (req: AuthenticatedRequest
     
     // Update positions with current prices
     const updatedPositions = positions.map((position) => {
-      const currentPrice = getCurrentPrice(position.asset);
+      const currentPrice = getCurrentPrice(position.asset) ?? position.entryPrice;
       const priceDiff = currentPrice - position.entryPrice;
       const direction = position.side === 'long' ? 1 : -1;
       const unrealizedPnl = priceDiff * position.size * direction;
       const unrealizedPnlPercent = (priceDiff / position.entryPrice) * 100 * direction * position.leverage;
-      
+
       return {
         ...position,
         currentPrice,
@@ -127,8 +125,23 @@ tradingRoutes.post(
       }
 
       const currentPrice = getCurrentPrice(position.asset);
+      if (currentPrice === null) {
+        return res.status(503).json({ error: 'Price feed unavailable', details: `No price data for ${position.asset}` });
+      }
 
       const closedPosition = await orderExecutor.closePosition(userId, id, currentPrice);
+
+      // Emit position_closed event (post-fee PnL)
+      await eventService.emit('position_closed', {
+        positionId: id,
+        asset: closedPosition.asset,
+        side: closedPosition.side,
+        entryPrice: closedPosition.entryPrice,
+        exitPrice: currentPrice,
+        size: closedPosition.size,
+        realizedPnl: closedPosition.realizedPnl,
+        source: closedPosition.source,
+      }, userId);
 
       // Update leaderboard stats
       await leaderboardService.updateUserStats(userId);

@@ -6,6 +6,7 @@ import { isValidAsset } from '../../config/assets.js';
 import { PnlCalculator } from './pnlCalculator.js';
 import type { Position, PlaceOrderRequest, OrderSide } from '../../types/trading.js';
 import { logger } from '../../lib/logger.js';
+import { eventService } from '../events/index.js';
 
 export class OrderExecutor {
   private pnlCalculator: PnlCalculator;
@@ -79,16 +80,23 @@ export class OrderExecutor {
     // Ensure account exists before calling RPC
     await this.getOrCreateAccount(userId);
 
-    // Calculate values
+    // Apply slippage to entry price (buys slip up, sells slip down)
     const notionalValue = size * currentPrice;
-    const marginRequired = notionalValue / leverage;
+    const slippedPrice = this.pnlCalculator.applySlippage(currentPrice, notionalValue, side);
+
+    // Calculate entry fee (taker fee for market orders)
+    const entryFee = this.pnlCalculator.calculateFee(notionalValue, TRADING_CONSTANTS.TAKER_FEE);
+
+    // Calculate margin based on slipped price
+    const slippedNotional = size * slippedPrice;
+    const marginRequired = slippedNotional / leverage;
     const liquidationPrice = this.pnlCalculator.calculateLiquidationPrice(
-      currentPrice,
+      slippedPrice,
       leverage,
       side
     );
 
-    logger.info(`Notional: ${notionalValue}, Margin required: ${marginRequired}`);
+    logger.info(`Notional: ${notionalValue}, Slipped price: ${slippedPrice}, Fee: ${entryFee}, Margin: ${marginRequired}`);
 
     const positionId = uuidv4();
     const supabase = getSupabase();
@@ -100,11 +108,13 @@ export class OrderExecutor {
       p_user_id: userId,
       p_asset: asset,
       p_side: side,
-      p_entry_price: currentPrice,
+      p_entry_price: slippedPrice,
       p_size: size,
       p_leverage: leverage,
       p_margin: marginRequired,
       p_liquidation_price: liquidationPrice,
+      p_source: request.source || 'manual',
+      p_signal_id: request.signalId || null,
     });
 
     if (error) {
@@ -118,7 +128,23 @@ export class OrderExecutor {
 
     logger.info(`Position created atomically: ${positionId}`);
 
-    return this.mapDbPosition(data);
+    const position = this.mapDbPosition(data);
+
+    // Emit trade_executed event (post-fee numbers)
+    await eventService.emit('trade_executed', {
+      positionId,
+      asset,
+      side,
+      size,
+      entryPrice: slippedPrice,
+      leverage,
+      margin: marginRequired,
+      entryFee,
+      source: request.source || 'manual',
+      signalId: request.signalId || null,
+    }, userId);
+
+    return position;
   }
 
   async closePosition(
@@ -141,17 +167,29 @@ export class OrderExecutor {
       throw new ValidationError('Position not found');
     }
 
-    // Calculate PnL
-    const pnl = this.pnlCalculator.calculatePnl(
+    // Apply slippage to exit price
+    const exitNotional = position.size * currentPrice;
+    const exitSide = position.side === 'long' ? 'short' : 'long'; // Closing reverses direction
+    const slippedExitPrice = this.pnlCalculator.applySlippage(currentPrice, exitNotional, exitSide as OrderSide);
+
+    // Calculate fees: entry fee was already "paid" at open, exit fee deducted now
+    const entryNotional = position.size * position.entry_price;
+    const entryFee = this.pnlCalculator.calculateFee(entryNotional, TRADING_CONSTANTS.TAKER_FEE);
+    const exitFee = this.pnlCalculator.calculateFee(exitNotional, TRADING_CONSTANTS.TAKER_FEE);
+    const totalFees = entryFee + exitFee;
+
+    // Calculate PnL (net of fees)
+    const grossPnl = this.pnlCalculator.calculatePnl(
       position.entry_price,
-      currentPrice,
+      slippedExitPrice,
       position.size,
       position.side as OrderSide
     );
+    const pnl = grossPnl - totalFees;
 
     const pnlPercent = this.pnlCalculator.calculatePnlPercent(
       position.entry_price,
-      currentPrice,
+      slippedExitPrice,
       position.side as OrderSide,
       position.leverage
     );
@@ -195,6 +233,8 @@ export class OrderExecutor {
       unrealizedPnlPercent: db.unrealized_pnl_percent as number,
       realizedPnl: db.realized_pnl as number,
       status: db.status as Position['status'],
+      source: (db.source as Position['source']) || 'manual',
+      signalId: db.signal_id as string | undefined,
       openedAt: db.opened_at as string,
       closedAt: db.closed_at as string | undefined,
     };
