@@ -127,7 +127,7 @@ export class TrackerBridge {
             confidence: s.confidence,
             entryPrice: s.entryPrice,
             source: s.source,
-          }).catch(() => {}); // Non-blocking for bridge reads
+          }).catch(e => logger.warn('[TrackerBridge] signal event emit failed:', e));
         }
       }
       this.lastSeenSignalIds = currentSignalIds;
