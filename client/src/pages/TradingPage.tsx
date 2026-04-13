@@ -622,7 +622,7 @@ export function TradingPage() {
           )}
         </div>
 
-        <div className="w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+        <div className="w-72 lg:w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
           {isAuthenticated && (
             <AccountStats
               account={account}

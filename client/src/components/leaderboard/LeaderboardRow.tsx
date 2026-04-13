@@ -52,7 +52,7 @@ export function LeaderboardRow({ entry }: LeaderboardRowProps) {
                   {entry.username.charAt(0).toUpperCase()}
                 </span>
               </div>
-              <span className="text-white font-medium">{entry.username}</span>
+              <span className="text-white font-medium truncate max-w-[120px]">{entry.username}</span>
             </div>
           </div>
           

@@ -145,25 +145,25 @@ export const useAuthStore = create<AuthStore>()(
           if (error) throw error;
 
           if (data.user) {
-            // Create profile
+            // Optimistic profile/account creation. These may fail due to RLS or
+            // if a database trigger already created them. The server also creates
+            // accounts on first trade via getOrCreateAccount(), so failures here
+            // are non-blocking.
             const { error: profileError } = await supabase.from('profiles').insert({
               user_id: data.user.id,
               username: username.toLowerCase(),
             });
-
             if (profileError) {
-              console.error('Profile creation error:', profileError);
+              console.warn('Profile creation skipped:', profileError.message);
             }
 
-            // Create account with initial balance
             const { error: accountError } = await supabase.from('accounts').insert({
               user_id: data.user.id,
               balance: 100000,
               initial_balance: 100000,
             });
-
             if (accountError) {
-              console.error('Account creation error:', accountError);
+              console.warn('Account creation skipped:', accountError.message);
             }
 
             if (data.session) {
