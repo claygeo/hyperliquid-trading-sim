@@ -1,6 +1,8 @@
 export type OrderSide = 'long' | 'short';
 export type PositionStatus = 'open' | 'closed' | 'liquidated';
 
+export type PositionSource = 'manual' | 'signal';
+
 export interface Position {
   id: string;
   userId: string;
@@ -16,6 +18,8 @@ export interface Position {
   unrealizedPnlPercent: number;
   realizedPnl: number;
   status: PositionStatus;
+  source: PositionSource;
+  signalId?: string;
   openedAt: string;
   closedAt?: string;
 }
@@ -52,6 +56,8 @@ export interface PlaceOrderRequest {
   side: OrderSide;
   size: number;
   leverage: number;
+  source?: PositionSource;
+  signalId?: string;
 }
 
 export interface ClosePositionRequest {
