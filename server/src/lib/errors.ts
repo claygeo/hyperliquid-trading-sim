@@ -51,3 +51,11 @@ export class RateLimitError extends AppError {
     super(message, 429);
   }
 }
+
+export class ExternalServiceError extends AppError {
+  public service: string;
+  constructor(service: string, message: string) {
+    super(`${service}: ${message}`, 502);
+    this.service = service;
+  }
+}

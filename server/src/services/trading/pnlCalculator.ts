@@ -1,4 +1,4 @@
-import { TRADING_CONSTANTS } from '../../config/constants.js';
+import { TRADING_CONSTANTS, SLIPPAGE_BPS_PER_10K } from '../../config/constants.js';
 import type { OrderSide } from '../../types/trading.js';
 
 export class PnlCalculator {
@@ -93,5 +93,20 @@ export class PnlCalculator {
       trades.filter((t) => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)
     );
     return grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
+  }
+
+  calculateFee(notional: number, feeRate: number): number {
+    return notional * feeRate;
+  }
+
+  // Simplified linear slippage: 0.05% per $10k notional.
+  // Direction: buys slip up, sells slip down.
+  applySlippage(price: number, notional: number, side: OrderSide): number {
+    const slippageBps = (notional / 10_000) * SLIPPAGE_BPS_PER_10K;
+    const slippageFraction = slippageBps / 10_000;
+    if (side === 'long') {
+      return price * (1 + slippageFraction);
+    }
+    return price * (1 - slippageFraction);
   }
 }
