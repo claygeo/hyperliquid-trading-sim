@@ -241,4 +241,50 @@ describe('PnlCalculator', () => {
       expect(calc.calculateProfitFactor(trades)).toBe(1);
     });
   });
+
+  describe('calculateFee', () => {
+    it('calculates taker fee on notional', () => {
+      // $50,000 notional * 0.05% = $25
+      expect(calc.calculateFee(50000, 0.0005)).toBeCloseTo(25, 2);
+    });
+
+    it('calculates maker fee on notional', () => {
+      // $50,000 notional * 0.02% = $10
+      expect(calc.calculateFee(50000, 0.0002)).toBeCloseTo(10, 2);
+    });
+
+    it('returns 0 for zero notional', () => {
+      expect(calc.calculateFee(0, 0.0005)).toBe(0);
+    });
+  });
+
+  describe('applySlippage', () => {
+    it('slips price UP for long (buying)', () => {
+      // Notional = $10,000 → slippage = 5 bps = 0.05%
+      const slipped = calc.applySlippage(50000, 10000, 'long');
+      expect(slipped).toBeGreaterThan(50000);
+      // 50000 * (1 + 5/10000) = 50025
+      expect(slipped).toBeCloseTo(50025, 2);
+    });
+
+    it('slips price DOWN for short (selling)', () => {
+      const slipped = calc.applySlippage(50000, 10000, 'short');
+      expect(slipped).toBeLessThan(50000);
+      // 50000 * (1 - 5/10000) = 49975
+      expect(slipped).toBeCloseTo(49975, 2);
+    });
+
+    it('scales linearly with notional size', () => {
+      // $50,000 notional = 5x the slippage of $10,000
+      const small = calc.applySlippage(50000, 10000, 'long');
+      const large = calc.applySlippage(50000, 50000, 'long');
+      const smallSlip = small - 50000;
+      const largeSlip = large - 50000;
+      expect(largeSlip / smallSlip).toBeCloseTo(5, 1);
+    });
+
+    it('returns unchanged price for zero notional', () => {
+      expect(calc.applySlippage(50000, 0, 'long')).toBe(50000);
+    });
+  });
 });
