@@ -98,11 +98,12 @@ Only Hyperliquid's official `candleSnapshot` response is accepted. The adapter m
 
 - reject HTTP failures, malformed rows, duplicates, non-finite/zero prices, and gaps;
 - validate symbol, `1d` interval, `t`/`T`, UTC alignment, OHLC ordering, and volume;
-- paginate deterministically because time-range responses contain at most 500 elements:
-  `startTime` is inclusive, the next page starts at `last T + 1`, `endTime` remains
-  `asOfMs - 1`, and empty/non-advancing pages fail the run;
-- enforce `maxPages = ceil(expectedCandles / 500) + 1`, reject requested ranges above the
-  official 5,000-candle history ceiling, and detect duplicates across page joins;
+- issue exactly one request per asset for the complete frozen range, with inclusive
+  `startTime` and `endTime = asOfMs - 1`; this 1,199-candle range is below the official
+  5,000-candle history ceiling, so an empty or partial response fails the run rather than
+  triggering an invented client-side page boundary;
+- reject requested ranges above the official 5,000-candle history ceiling and detect
+  duplicate rows in the response;
 - require exactly 1,199 candles spanning the frozen start through 2026-07-21; BTC and ETH
   must have an identical calendar;
 - sort and validate exact daily spacing and require `T < asOfMs`;
@@ -110,10 +111,10 @@ Only Hyperliquid's official `candleSnapshot` response is accepted. The adapter m
 - preserve source, endpoint, requested window, and as-of boundary in the canonical input;
 - never call the simulator's CryptoCompare/Binance sources or random candle fallback.
 
-Fetch time and HTTP page partitioning are non-canonical provenance. The content address
+Fetch time and the raw HTTP response are non-canonical provenance. The content address
 hashes only the normalized, sorted candles plus frozen source/request configuration;
 identical normalized input and config must therefore produce the same data SHA-256 even
-if transport page boundaries or raw JSON ordering differ. A separate artifact SHA-256
+if raw JSON ordering differs. A separate artifact SHA-256
 covers the full stored envelope, including raw-response page hashes. Canonical data and
 result JSON use stable key ordering.
 
