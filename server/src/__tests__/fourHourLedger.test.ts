@@ -23,6 +23,7 @@ import {
   replayAcceptedSchedule,
   replayAdverseBoundarySchedule,
 } from '../research/fourHour/ledger.js';
+import { navReturns } from '../research/fourHour/metrics.js';
 import {
   buildAcceptedSchedule,
   decideStressAdmissions,
@@ -404,7 +405,9 @@ describe('four-hour ledger accounting', () => {
     const firstMark = atFirstClose.findIndex((event) => event.kind === 'mark');
     expect(firstMark).toBeGreaterThan(0);
     expect(atFirstClose.slice(0, firstMark).every((event) => event.kind === 'funding')).toBe(true);
-    expect(atFirstClose.filter((event) => event.kind === 'funding')).toEqual(expect.arrayContaining([
+    const fundingEvents = atFirstClose.filter((event) => event.kind === 'funding');
+    expect(fundingEvents.every((event) => !Object.hasOwn(event, 'boundaryPositionId'))).toBe(true);
+    expect(fundingEvents).toEqual(expect.arrayContaining([
       expect.objectContaining({
         positionId: positionId(H3_CONFIG, 'BTC', 0),
         fundingTime: START + HOUR_MS,
@@ -554,6 +557,61 @@ describe('four-hour ledger accounting', () => {
       .toEqual(result.stress.completedPositions.map((position) => position.id));
     expect(result.base.truncatedPositionIds).toEqual([future.id]);
     expect(result.stress.truncatedPositionIds).toEqual([future.id]);
+  });
+
+  test('samples a midnight close-mark insolvency before every forced close', () => {
+    const bars = 9;
+    const midnight = START + 6 * FOUR_HOUR_MS;
+    const terminalClose = 499.83666666666664;
+    const closes = [
+      ...Array.from({ length: 5 }, () => 100),
+      ...Array.from({ length: bars - 5 }, () => terminalClose),
+    ];
+    const data = fixtureData(bars, {
+      BTC: candles('BTC', Array.from({ length: bars }, () => 100), closes),
+    });
+    const shortSignal = { ...signal('BTC', 2), direction: -1 as const };
+    const built = buildAcceptedSchedule({
+      trial: H3_CONFIG,
+      portfolio: 'primary',
+      signals: [shortSignal],
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    const cases = replayAcceptedCostCases({
+      schedule: built.schedule,
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    const adverse = replayAdverseBoundarySchedule({
+      schedule: built.schedule,
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+
+    const results = [built.stressController, cases.stress, cases.base, adverse];
+    for (const result of results) {
+      expect(result.termination).toMatchObject({ time: midnight, reference: 'close' });
+      expect(result.dailyNav.at(-1)).toEqual({
+        time: midnight,
+        nav: result.termination!.navBeforeClose,
+      });
+      const midnightKinds = result.events
+        .filter((event) => event.time === midnight)
+        .map((event) => event.kind);
+      expect(midnightKinds.indexOf('mark')).toBeLessThan(midnightKinds.indexOf('daily_sample'));
+      expect(midnightKinds.indexOf('daily_sample')).toBeLessThan(midnightKinds.indexOf('termination'));
+      expect(result.endingNav).toBeLessThan(result.dailyNav.at(-1)!.nav);
+      expect(Number.isFinite(navReturns(result.dailyNav).at(-1))).toBe(true);
+    }
+    expect(built.stressController.termination?.phase).toBe('completed_close');
+    expect(cases.stress.termination?.phase).toBe('completed_close');
+    expect(cases.base.termination?.phase).toBe('shared_stop');
+    expect(adverse.termination?.phase).toBe('completed_close');
+    expect(navReturns(cases.base.dailyNav).at(-1)).toBeGreaterThan(-1);
+    for (const result of [built.stressController, cases.stress, adverse]) {
+      expect(navReturns(result.dailyNav).at(-1)).toBeLessThanOrEqual(-1);
+    }
   });
 
   test('synchronizes a current-open stress stop into the base replay', () => {

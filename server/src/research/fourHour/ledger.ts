@@ -664,12 +664,17 @@ export class FourHourLedgerMachine {
         fundingTime: flow.time,
         fundingRate: flow.rate,
         oracleProxy: flow.proxy,
-        boundaryPositionId: flow.boundaryPositionId,
+        ...(flow.boundaryPositionId === undefined
+          ? {}
+          : { boundaryPositionId: flow.boundaryPositionId }),
       });
     }
     this.refreshExposureExtrema();
     this.recordNav(boundary, 'completed_close');
     this.recordEvent(boundary, 'completed_close', 'mark');
+    // The frozen chronology samples the completed 20:00-24:00 UTC bar before
+    // any termination close or boundary execution stamped at midnight.
+    this.recordDailySample(boundary);
     if (this.nav <= 0) this.forceTerminate(boundary, 'completed_close', 'close', 'non_positive_nav');
   }
 
@@ -1068,7 +1073,6 @@ export function replayAcceptedSchedule(input: ReplayScheduleInput): LedgerResult
         machine.forceSharedStop(input.sharedStop!);
         break;
       }
-      machine.recordDailySample(boundary);
     }
     if (boundary === input.window.endTime) break;
     machine.revalueToOpen(boundary);

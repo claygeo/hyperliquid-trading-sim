@@ -351,7 +351,6 @@ export function buildAcceptedSchedule(
   for (let boundary = input.window.startTime; boundary <= input.window.endTime; boundary += FOUR_HOUR_MS) {
     if (boundary > input.window.startTime && !machine.terminated) {
       machine.completeBar(boundary);
-      if (!machine.terminated) machine.recordDailySample(boundary);
     }
 
     const decisions = signalIndex.get(boundary) ?? [];

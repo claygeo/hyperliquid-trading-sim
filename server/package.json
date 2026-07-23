@@ -12,7 +12,12 @@
     "test:coverage": "jest --coverage --runInBand",
     "research:trend:snapshot": "tsx src/research/cli.ts snapshot",
     "research:trend": "tsx src/research/cli.ts run",
-    "research:trend:report": "tsx src/research/cli.ts report"
+    "research:trend:report": "tsx src/research/cli.ts report",
+    "research:four-hour:preflight": "tsx src/research/fourHour/cli.ts preflight",
+    "research:four-hour:snapshot": "tsx src/research/fourHour/cli.ts snapshot",
+    "research:four-hour:evaluate": "tsx src/research/fourHour/cli.ts evaluate",
+    "research:four-hour:adjudicate": "tsx src/research/fourHour/cli.ts adjudicate",
+    "research:four-hour:replay": "tsx src/research/fourHour/cli.ts replay"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
