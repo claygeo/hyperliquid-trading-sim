@@ -65,6 +65,11 @@ function finitePositive(value: number, label: string): number {
   return value;
 }
 
+function finiteDerived(value: number, label: string): number {
+  if (!Number.isFinite(value)) throw new Error(`${label} must be finite`);
+  return value;
+}
+
 function candleOpen(
   data: Readonly<ValidatedFamilyData>,
   symbol: 'BTC' | 'ETH' | 'HYPE' | '@142' | '@151',
@@ -219,29 +224,47 @@ export function decideStressAdmissions(
   let admittedEntryGross = 0;
   for (const candidate of ordered) {
     const candidateGross = finitePositive(candidate.entryGross, `${candidate.id} entry gross`);
-    const candidateCost = entryCostsForPosition(candidate, STRESS_COSTS).total;
-    const computedGross = entryCostsForPosition(candidate, STRESS_COSTS).notional;
+    const entryCosts = entryCostsForPosition(candidate, STRESS_COSTS);
+    const candidateCost = finiteDerived(entryCosts.total, `${candidate.id} entry cost`);
+    const computedGross = finiteDerived(entryCosts.notional, `${candidate.id} computed gross`);
     if (Math.abs(computedGross - candidateGross) > Math.max(1, computedGross) * 1e-12) {
       throw new Error(`${candidate.id} entry gross is inconsistent`);
     }
-    const projectedStressNav = navBefore - admittedEntryCosts - candidateCost;
-    const nextGross = admittedEntryGross + candidateGross;
+    const projectedStressNav = finiteDerived(
+      navBefore - admittedEntryCosts - candidateCost,
+      `${candidate.id} projected stress NAV`,
+    );
+    const nextGross = finiteDerived(
+      admittedEntryGross + candidateGross,
+      `${candidate.id} next admitted gross`,
+    );
+    const grossAfterCandidate = finiteDerived(
+      snapshot.retainedMarkedGross + nextGross,
+      `${candidate.id} retained plus admitted gross`,
+    );
     if (!(projectedStressNav > 0)) {
       rejected.push({ position: candidate, reason: 'non_positive_nav' });
       continue;
     }
-    if (snapshot.retainedMarkedGross + nextGross > Math.min(cap, projectedStressNav)) {
+    if (grossAfterCandidate > Math.min(cap, projectedStressNav)) {
       rejected.push({ position: candidate, reason: 'capacity' });
       continue;
     }
     admitted.push(candidate);
-    admittedEntryCosts += candidateCost;
+    admittedEntryCosts = finiteDerived(
+      admittedEntryCosts + candidateCost,
+      'Admitted entry costs',
+    );
     admittedEntryGross = nextGross;
   }
+  const projectedStressNav = finiteDerived(
+    navBefore - admittedEntryCosts,
+    'Projected stress NAV after admissions',
+  );
   return {
     admitted,
     rejected,
-    projectedStressNav: navBefore - admittedEntryCosts,
+    projectedStressNav,
     admittedEntryGross,
     admittedEntryCosts,
   };

@@ -178,6 +178,7 @@ function positive(value: number, label: string): number {
 }
 
 function equalWithinFrozenTolerance(left: number, right: number): boolean {
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
   return Math.abs(left - right) <= Math.max(1, Math.abs(right)) * 1e-12;
 }
 
@@ -210,10 +211,14 @@ export function executionCostForLeg(
   if (![feeRate, costs.slippage].every((rate) => Number.isFinite(rate) && rate >= 0)) {
     throw new Error('Execution cost rates must be finite and non-negative');
   }
-  const notional = Math.abs(leg.signedUnits) * price;
-  const fee = notional * feeRate * multiplier;
-  const slippage = notional * costs.slippage * multiplier;
-  return { fee, slippage, total: fee + slippage, notional };
+  const notional = finite(Math.abs(leg.signedUnits) * price, 'Execution notional');
+  const fee = finite(notional * feeRate * multiplier, 'Execution fee');
+  const slippage = finite(
+    notional * costs.slippage * multiplier,
+    'Execution slippage',
+  );
+  const total = finite(fee + slippage, 'Execution total cost');
+  return { fee, slippage, total, notional };
 }
 
 export function entryCostsForPosition(
@@ -223,10 +228,10 @@ export function entryCostsForPosition(
   return position.legs.reduce<ExecutionCost>((sum, leg) => {
     const value = executionCostForLeg(leg, leg.entryReferencePrice, costs);
     return {
-      fee: sum.fee + value.fee,
-      slippage: sum.slippage + value.slippage,
-      total: sum.total + value.total,
-      notional: sum.notional + value.notional,
+      fee: finite(sum.fee + value.fee, 'Position entry fee'),
+      slippage: finite(sum.slippage + value.slippage, 'Position entry slippage'),
+      total: finite(sum.total + value.total, 'Position entry total cost'),
+      notional: finite(sum.notional + value.notional, 'Position entry notional'),
     };
   }, { fee: 0, slippage: 0, total: 0, notional: 0 });
 }
@@ -980,10 +985,26 @@ function validateSchedule(input: Readonly<ReplayScheduleInput>): void {
   const { schedule } = input;
   const trial = frozenTrialForId(schedule.trialId);
   if (input.sharedStop) validateReplayStop(input.sharedStop, input.window);
+  const primaryAssets = new Set<PerpAsset>(trial.primaryAssets);
+  const exploratoryAssets = new Set<PerpAsset>(trial.exploratoryAssets);
+  let portfolio: 'primary' | 'exploratory' | null = null;
+  const observePortfolioAsset = (asset: PerpAsset, label: string): void => {
+    const next = exploratoryAssets.has(asset)
+      ? 'exploratory'
+      : primaryAssets.has(asset)
+        ? 'primary'
+        : null;
+    if (!next) throw new Error(`${label} uses an asset outside ${trial.id}`);
+    if (portfolio && portfolio !== next) {
+      throw new Error('Schedule mixes primary and exploratory portfolio assets');
+    }
+    portfolio = next;
+  };
   const ids = new Set<string>();
   const lastExitByAsset = new Map<PerpAsset, number>();
   let previous: ScheduledPosition | undefined;
   for (const position of schedule.positions) {
+    observePortfolioAsset(position.asset, `Position ${position.id}`);
     if (ids.has(position.id)) throw new Error(`Duplicate scheduled position ${position.id}`);
     validatePositionAgainstTrial(position, trial, input.data, input.window);
     if (previous && compareScheduledPositions(previous, position) > 0) {
@@ -996,6 +1017,20 @@ function validateSchedule(input: Readonly<ReplayScheduleInput>): void {
     ids.add(position.id);
     lastExitByAsset.set(position.asset, position.exitTime);
     previous = position;
+  }
+  const skippedKeys = new Set<string>();
+  const skippedReasons = new Set(['pending_or_open', 'window_end', 'capacity', 'non_positive_nav']);
+  for (const item of schedule.skipped) {
+    if (item.strategy !== trial.id) throw new Error('Skipped signal does not belong to the frozen trial');
+    observePortfolioAsset(item.asset, 'Skipped signal');
+    assertAlignedTime(item.decisionTime, 'Skipped signal decision');
+    if (item.decisionTime < input.window.startTime || item.decisionTime >= input.window.endTime) {
+      throw new Error('Skipped signal is outside the replay window');
+    }
+    if (!skippedReasons.has(item.reason)) throw new Error('Skipped signal reason is invalid');
+    const key = `${item.asset}:${item.decisionTime}`;
+    if (skippedKeys.has(key)) throw new Error(`Duplicate skipped signal ${key}`);
+    skippedKeys.add(key);
   }
 }
 

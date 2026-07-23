@@ -275,6 +275,36 @@ describe('frozen stress schedule', () => {
       retainedMarkedGross: 0,
       entryGrossCap: 1_500,
     })).toThrow(/entry gross must be finite and positive/);
+
+    const overflowNotional = {
+      ...directionalPosition('BTC', 1, 7.5),
+      entryGross: Number.MAX_VALUE,
+      legs: [{
+        ...directionalPosition('BTC', 1, 7.5).legs[0],
+        signedUnits: Number.MAX_VALUE,
+        entryReferencePrice: 2,
+      }],
+    };
+    expect(() => decideStressAdmissions([overflowNotional], {
+      stressNavBeforeBatch: 3_000,
+      retainedMarkedGross: 0,
+      entryGrossCap: 1_500,
+    })).toThrow(/Execution notional must be finite/);
+
+    const overflowAggregateGross = {
+      ...directionalPosition('BTC', 1, 7.5),
+      entryGross: 1e308,
+      legs: [{
+        ...directionalPosition('BTC', 1, 7.5).legs[0],
+        signedUnits: 1e308,
+        entryReferencePrice: 1,
+      }],
+    };
+    expect(() => decideStressAdmissions([overflowAggregateGross], {
+      stressNavBeforeBatch: 3_000,
+      retainedMarkedGross: 1e308,
+      entryGrossCap: 1_500,
+    })).toThrow(/retained plus admitted gross must be finite/);
   });
 });
 
@@ -489,6 +519,156 @@ describe('four-hour ledger accounting', () => {
     expect(result.completedPositions).toEqual([]);
     expect(result.truncatedPositionIds).toEqual([pending.id]);
     expect(result.termination).toMatchObject({ time: stopTime, phase: 'shared_stop' });
+  });
+
+  test('synchronizes a completed-close stress stop into the base replay', () => {
+    const bars = 8;
+    const terminalClose = 499.83666666666664;
+    const data = fixtureData(bars, {
+      BTC: candles(
+        'BTC',
+        Array.from({ length: bars }, () => 100),
+        [terminalClose, ...Array.from({ length: bars - 1 }, () => terminalClose)],
+      ),
+    });
+    const first = directionalPosition('BTC', 0, -7.5);
+    const future = directionalPosition('ETH', 2, 7.5);
+    const result = replayAcceptedCostCases({
+      schedule: schedule([first, future]),
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    expect(result.stress.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'completed_close',
+      reason: 'non_positive_nav',
+      reference: 'close',
+    });
+    expect(result.base.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'shared_stop',
+      reason: 'shared_cost_case',
+      reference: 'close',
+    });
+    expect(result.base.completedPositions.map((position) => position.id))
+      .toEqual(result.stress.completedPositions.map((position) => position.id));
+    expect(result.base.truncatedPositionIds).toEqual([future.id]);
+    expect(result.stress.truncatedPositionIds).toEqual([future.id]);
+  });
+
+  test('synchronizes a current-open stress stop into the base replay', () => {
+    const bars = 8;
+    const terminalOpen = 499.83666666666664;
+    const opens = [100, ...Array.from({ length: bars - 1 }, () => terminalOpen)];
+    const closes = [100, ...Array.from({ length: bars - 1 }, () => terminalOpen)];
+    const data = fixtureData(bars, { BTC: candles('BTC', opens, closes) });
+    const first = directionalPosition('BTC', 0, -7.5);
+    const future = directionalPosition('ETH', 2, 7.5);
+    const result = replayAcceptedCostCases({
+      schedule: schedule([first, future]),
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    expect(result.stress.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'current_open',
+      reason: 'non_positive_nav',
+      reference: 'open',
+    });
+    expect(result.base.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'shared_stop',
+      reason: 'shared_cost_case',
+      reference: 'open',
+    });
+    expect(result.base.completedPositions.map((position) => position.id))
+      .toEqual(result.stress.completedPositions.map((position) => position.id));
+    expect(result.base.truncatedPositionIds).toEqual([future.id]);
+    expect(result.stress.truncatedPositionIds).toEqual([future.id]);
+  });
+
+  test('synchronizes an exit-cost stop and truncates a same-boundary entry', () => {
+    const bars = 8;
+    const exitOpen = 499.1433333333333;
+    const opens = [100, 100, 100, ...Array.from({ length: bars - 3 }, () => exitOpen)];
+    const data = fixtureData(bars, { BTC: candles('BTC', opens) });
+    const first = directionalPosition('BTC', 0, -7.5);
+    const sameBoundary = directionalPosition('ETH', 3, 7.5);
+    const result = replayAcceptedCostCases({
+      schedule: schedule([first, sameBoundary]),
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    expect(result.stress.termination).toMatchObject({
+      time: START + 3 * FOUR_HOUR_MS,
+      phase: 'execution_batch',
+      reason: 'non_positive_nav',
+      reference: 'open',
+    });
+    expect(result.base.termination).toMatchObject({
+      time: START + 3 * FOUR_HOUR_MS,
+      phase: 'shared_stop',
+      reason: 'shared_cost_case',
+      reference: 'open',
+    });
+    expect(result.base.completedPositions.map((position) => position.id))
+      .toEqual(result.stress.completedPositions.map((position) => position.id));
+    expect(result.base.truncatedPositionIds).toEqual([sameBoundary.id]);
+    expect(result.stress.truncatedPositionIds).toEqual([sameBoundary.id]);
+  });
+
+  test('synchronizes an entry-cost stop after both ledgers execute the same batch', () => {
+    const bars = 8;
+    const entryOpen = 499.6766666666667;
+    const opens = [100, ...Array.from({ length: bars - 1 }, () => entryOpen)];
+    const closes = [100, ...Array.from({ length: bars - 1 }, () => entryOpen)];
+    const data = fixtureData(bars, { BTC: candles('BTC', opens, closes) });
+    const retained = directionalPosition('BTC', 0, -7.5);
+    const entering = directionalPosition('ETH', 1, 7.5);
+    const result = replayAcceptedCostCases({
+      schedule: schedule([retained, entering]),
+      data,
+      window: { startTime: START, endTime: START + bars * FOUR_HOUR_MS },
+    });
+    expect(result.stress.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'execution_batch',
+      reason: 'non_positive_nav',
+      reference: 'open',
+    });
+    expect(result.base.termination).toMatchObject({
+      time: START + FOUR_HOUR_MS,
+      phase: 'shared_stop',
+      reason: 'shared_cost_case',
+      reference: 'open',
+    });
+    expect(result.base.completedPositions.map((position) => position.id))
+      .toEqual(result.stress.completedPositions.map((position) => position.id));
+    expect(result.base.truncatedPositionIds).toEqual([]);
+    expect(result.stress.truncatedPositionIds).toEqual([]);
+  });
+
+  test('rejects mixed primary and exploratory assets in positions or skipped rows', () => {
+    const data = fixtureData(8);
+    const primary = directionalPosition('BTC', 0, 7.5);
+    const exploratory = directionalPosition('HYPE', 0, 3.75);
+    const input = (accepted: AcceptedSchedule) => ({
+      schedule: accepted,
+      data,
+      window: { startTime: START, endTime: START + 8 * FOUR_HOUR_MS },
+      costs: BASE_COSTS,
+    });
+    expect(() => replayAcceptedSchedule(input(schedule([primary, exploratory]))))
+      .toThrow(/mixes primary and exploratory/);
+    expect(() => replayAcceptedSchedule(input({
+      ...schedule([primary]),
+      skipped: [{
+        strategy: 'H3',
+        asset: 'HYPE',
+        decisionTime: START,
+        reason: 'pending_or_open',
+      }],
+    }))).toThrow(/mixes primary and exploratory/);
   });
 
   test('rejects tampered schedule identity, chronology, quantity, and non-finite gross', () => {
