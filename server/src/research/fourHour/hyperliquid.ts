@@ -67,12 +67,16 @@ export const FROZEN_SPOT_PAIR_EXPECTATIONS: readonly SpotPairExpectation[] = Obj
 export interface SpotMetadataResult {
   requestType: 'spotMeta';
   rawResponseSha256: string;
+  fetchedAt: string;
   pairs: Partial<Record<SpotSymbol, ParsedSpotPairMetadata>>;
 }
+
+export type FourHourClock = () => Date;
 
 export interface FourHourFetchOptions {
   endpoint?: string;
   fetchImpl?: FourHourFetch;
+  clock?: FourHourClock;
 }
 
 export type SpotMetaFetchOptions = FourHourFetchOptions;
@@ -133,11 +137,21 @@ function resolveFetch(options: FourHourFetchOptions): { endpoint: string; fetchI
   return { endpoint, fetchImpl };
 }
 
+function fetchedAtFromClock(options: FourHourFetchOptions): string {
+  const clock = options.clock ?? (() => new Date());
+  if (typeof clock !== 'function') throw new Error('Clock implementation is unavailable');
+  const instant = clock();
+  if (!(instant instanceof Date) || !Number.isFinite(instant.getTime())) {
+    throw new Error('Clock must return a valid Date');
+  }
+  return instant.toISOString();
+}
+
 async function postOfficial(
   body: Record<string, unknown>,
   label: string,
   options: FourHourFetchOptions,
-): Promise<{ decoded: unknown; rawResponseSha256: string }> {
+): Promise<{ decoded: unknown; rawResponseSha256: string; fetchedAt: string }> {
   const { endpoint, fetchImpl } = resolveFetch(options);
   const response = await fetchImpl(endpoint, {
     method: 'POST',
@@ -154,7 +168,11 @@ async function postOfficial(
   } catch {
     throw new Error(`${label} was not valid JSON`);
   }
-  return { decoded, rawResponseSha256: sha256(raw) };
+  return {
+    decoded,
+    rawResponseSha256: sha256(raw),
+    fetchedAt: fetchedAtFromClock(options),
+  };
 }
 
 function validateWindow(
@@ -272,7 +290,7 @@ export async function fetchFourHourCandles(
     const expectedRows = Math.min(SOURCE_PAGE_ROWS, totalRows - offset);
     const requestedStartTime = window.startTime + offset * FOUR_HOUR_MS;
     const requestedEndTime = requestedStartTime + expectedRows * FOUR_HOUR_MS - 1;
-    const { decoded, rawResponseSha256 } = await postOfficial({
+    const { decoded, rawResponseSha256, fetchedAt } = await postOfficial({
       type: 'candleSnapshot',
       req: {
         coin: window.symbol,
@@ -307,6 +325,7 @@ export async function fetchFourHourCandles(
       firstTime: parsed[0].openTime,
       lastTime: parsed.at(-1)!.closeTime,
       rawResponseSha256,
+      fetchedAt,
     });
     candles.push(...parsed);
   }
@@ -346,7 +365,7 @@ export async function fetchHourlyFunding(
     const expectedRows = Math.min(SOURCE_PAGE_ROWS, totalRows - offset);
     const requestedStartTime = window.startTime + offset * HOUR_MS;
     const requestedEndTime = requestedStartTime + (expectedRows - 1) * HOUR_MS;
-    const { decoded, rawResponseSha256 } = await postOfficial({
+    const { decoded, rawResponseSha256, fetchedAt } = await postOfficial({
       type: 'fundingHistory',
       coin: window.coin,
       startTime: requestedStartTime,
@@ -378,6 +397,7 @@ export async function fetchHourlyFunding(
       firstTime: parsed[0].time,
       lastTime: parsed.at(-1)!.time,
       rawResponseSha256,
+      fetchedAt,
     });
     funding.push(...parsed);
   }
@@ -485,7 +505,7 @@ export async function fetchRelevantSpotMeta(
   options: SpotMetaFetchOptions = {},
 ): Promise<SpotMetadataResult> {
   resolveFetch(options);
-  const { decoded, rawResponseSha256 } = await postOfficial(
+  const { decoded, rawResponseSha256, fetchedAt } = await postOfficial(
     { type: 'spotMeta' },
     'spotMeta request',
     options,
@@ -499,6 +519,7 @@ export async function fetchRelevantSpotMeta(
   return {
     requestType: 'spotMeta',
     rawResponseSha256,
+    fetchedAt,
     pairs: { '@142': ubtc, '@151': ueth },
   };
 }

@@ -60,6 +60,7 @@ export interface RawPageEvidence {
   firstTime: number;
   lastTime: number;
   rawResponseSha256: string;
+  fetchedAt: string;
 }
 
 export interface CandleSeriesSnapshot {

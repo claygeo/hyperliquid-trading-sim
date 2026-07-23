@@ -33,6 +33,9 @@ function rawSha256(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
 }
 
+const FIXED_FETCHED_AT = '2026-07-23T04:05:06.789Z';
+const fixedClock = () => new Date(FIXED_FETCHED_AT);
+
 function candleRow(symbol: MarketSymbol, openTime: number, overrides: Record<string, unknown> = {}) {
   return {
     t: openTime,
@@ -111,6 +114,9 @@ describe('four-hour Hyperliquid data adapter', () => {
     const startTime = 0;
     const expectedBars = 501;
     const rawPages: string[] = [];
+    const clock = jest.fn()
+      .mockReturnValueOnce(new Date('2026-07-23T04:05:06.001Z'))
+      .mockReturnValueOnce(new Date('2026-07-23T04:05:06.002Z'));
     const fetchImpl = injectedFetch((body) => {
       expect(body.type).toBe('candleSnapshot');
       expect(body.req.coin).toBe('BTC');
@@ -129,7 +135,7 @@ describe('four-hour Hyperliquid data adapter', () => {
       startTime,
       endTime: startTime + expectedBars * FOUR_HOUR_MS,
       expectedBars,
-    }, { fetchImpl });
+    }, { fetchImpl, clock });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body).req).toEqual({
@@ -153,14 +159,17 @@ describe('four-hour Hyperliquid data adapter', () => {
         responseRows: 500,
         acceptedRows: 500,
         rawResponseSha256: rawSha256(rawPages[0]),
+        fetchedAt: '2026-07-23T04:05:06.001Z',
       }),
       expect.objectContaining({
         page: 2,
         responseRows: 1,
         acceptedRows: 1,
         rawResponseSha256: rawSha256(rawPages[1]),
+        fetchedAt: '2026-07-23T04:05:06.002Z',
       }),
     ]);
+    expect(clock).toHaveBeenCalledTimes(2);
   });
 
   test('rejects a non-official endpoint before issuing a request', async () => {
@@ -170,9 +179,20 @@ describe('four-hour Hyperliquid data adapter', () => {
       startTime: 0,
       endTime: FOUR_HOUR_MS,
       expectedBars: 1,
-    }, { endpoint: 'https://example.com/info', fetchImpl }))
+    }, { endpoint: 'https://example.com/info', fetchImpl, clock: fixedClock }))
       .rejects.toThrow('official Hyperliquid info endpoint');
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('rejects an injected clock that cannot produce valid UTC provenance', async () => {
+    const fetchImpl = injectedFetch(() => JSON.stringify([candleRow('BTC', 0)]));
+    await expect(fetchFourHourCandles({
+      symbol: 'BTC',
+      startTime: 0,
+      endTime: FOUR_HOUR_MS,
+      expectedBars: 1,
+    }, { fetchImpl, clock: () => new Date(Number.NaN) }))
+      .rejects.toThrow('Clock must return a valid Date');
   });
 
   test('rejects HTTP, JSON, empty, short, duplicate, and gapped candle responses', async () => {
@@ -203,7 +223,7 @@ describe('four-hour Hyperliquid data adapter', () => {
       ],
     ];
     for (const [label, fetchImpl, error] of cases) {
-      await expect(fetchFourHourCandles(window, { fetchImpl })).rejects.toThrow(error);
+      await expect(fetchFourHourCandles(window, { fetchImpl, clock: fixedClock })).rejects.toThrow(error);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(label).toBeTruthy();
     }
@@ -216,13 +236,13 @@ describe('four-hour Hyperliquid data adapter', () => {
       startTime: 1,
       endTime: FOUR_HOUR_MS,
       expectedBars: 1,
-    }, { fetchImpl })).rejects.toThrow(/aligned/);
+    }, { fetchImpl, clock: fixedClock })).rejects.toThrow(/aligned/);
     await expect(fetchFourHourCandles({
       symbol: 'ETH',
       startTime: 0,
       endTime: FOUR_HOUR_MS,
       expectedBars: 2,
-    }, { fetchImpl })).rejects.toThrow(/expectedBars mismatch/);
+    }, { fetchImpl, clock: fixedClock })).rejects.toThrow(/expectedBars mismatch/);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -259,6 +279,9 @@ describe('four-hour Hyperliquid data adapter', () => {
   test('requests inclusive funding pages and rejects partial calendars', async () => {
     const expectedHours = 501;
     const rawPages: string[] = [];
+    const clock = jest.fn()
+      .mockReturnValueOnce(new Date('2026-07-23T05:00:00.001Z'))
+      .mockReturnValueOnce(new Date('2026-07-23T05:00:00.002Z'));
     const fetchImpl = injectedFetch((body) => {
       expect(body.type).toBe('fundingHistory');
       expect(body.coin).toBe('ETH');
@@ -275,7 +298,7 @@ describe('four-hour Hyperliquid data adapter', () => {
       startTime: 0,
       endTime: 500 * HOUR_MS,
       expectedHours,
-    }, { fetchImpl });
+    }, { fetchImpl, clock });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
@@ -288,6 +311,11 @@ describe('four-hour Hyperliquid data adapter', () => {
     expect(result.funding[0]).toEqual({ coin: 'ETH', time: 0, rate: 0.00001 });
     expect(result.funding.at(-1)?.time).toBe(500 * HOUR_MS);
     expect(result.pages.map((page) => page.rawResponseSha256)).toEqual(rawPages.map(rawSha256));
+    expect(result.pages.map((page) => page.fetchedAt)).toEqual([
+      '2026-07-23T05:00:00.001Z',
+      '2026-07-23T05:00:00.002Z',
+    ]);
+    expect(clock).toHaveBeenCalledTimes(2);
 
     const partial = injectedFetch((body) => JSON.stringify([
       fundingRow('ETH', body.startTime),
@@ -297,7 +325,7 @@ describe('four-hour Hyperliquid data adapter', () => {
       startTime: 0,
       endTime: HOUR_MS,
       expectedHours: 2,
-    }, { fetchImpl: partial })).rejects.toThrow(/expected 2 rows/);
+    }, { fetchImpl: partial, clock: fixedClock })).rejects.toThrow(/expected 2 rows/);
   });
 
   test('validates funding identity, exact UTC-hour timestamps, and finite rates', () => {
@@ -316,10 +344,11 @@ describe('four-hour Hyperliquid data adapter', () => {
       expect(body).toEqual({ type: 'spotMeta' });
       return raw;
     });
-    const result = await fetchRelevantSpotMeta({ fetchImpl });
+    const result = await fetchRelevantSpotMeta({ fetchImpl, clock: fixedClock });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result.rawResponseSha256).toBe(rawSha256(raw));
+    expect(result.fetchedAt).toBe(FIXED_FETCHED_AT);
     expect(Object.keys(result.pairs).sort()).toEqual(['@142', '@151']);
     expect(result.pairs['@142']).toEqual(expect.objectContaining({
       symbol: '@142',
@@ -389,12 +418,14 @@ describe('four-hour Hyperliquid data adapter', () => {
     });
 
     const [candles, funding] = await Promise.all([
-      fetchFrozenFourHourCandles('HYPE', { fetchImpl }),
-      fetchFrozenHourlyFunding('HYPE', { fetchImpl }),
+      fetchFrozenFourHourCandles('HYPE', { fetchImpl, clock: fixedClock }),
+      fetchFrozenHourlyFunding('HYPE', { fetchImpl, clock: fixedClock }),
     ]);
     expect(candles.candles).toHaveLength(3_562);
     expect(candles.pages).toHaveLength(8);
     expect(funding.funding).toHaveLength(14_248);
     expect(funding.pages).toHaveLength(29);
+    expect(candles.pages.every((page) => page.fetchedAt === FIXED_FETCHED_AT)).toBe(true);
+    expect(funding.pages.every((page) => page.fetchedAt === FIXED_FETCHED_AT)).toBe(true);
   });
 });
