@@ -110,14 +110,18 @@ Only Hyperliquid's official `candleSnapshot` response is accepted. The adapter m
 - preserve source, endpoint, requested window, and as-of boundary in the canonical input;
 - never call the simulator's CryptoCompare/Binance sources or random candle fallback.
 
-Fetch time is non-canonical metadata. The canonical snapshot and result use stable key
-ordering; identical frozen input and config must produce byte-identical canonical JSON
-and the same SHA-256.
+Fetch time and HTTP page partitioning are non-canonical provenance. The content address
+hashes only the normalized, sorted candles plus frozen source/request configuration;
+identical normalized input and config must therefore produce the same data SHA-256 even
+if transport page boundaries or raw JSON ordering differ. A separate artifact SHA-256
+covers the full stored envelope, including raw-response page hashes. Canonical data and
+result JSON use stable key ordering.
 
 The snapshot writer records raw-response SHA-256 values and refuses to overwrite an
 existing trial snapshot. The report records trial ID, specification commit, code commit,
-snapshot SHA-256, exact requested/received windows, endpoint, and parameters. Refreshing
-or replacing an input requires a new trial ID rather than a force flag.
+normalized data SHA-256, full artifact SHA-256, exact requested/received windows,
+endpoint, and parameters. Refreshing or replacing an input requires a new trial ID
+rather than a force flag.
 
 ## Evaluation
 
