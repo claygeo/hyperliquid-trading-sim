@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import { PERP_ASSETS, type PerpAsset } from './contracts.js';
+import { PRIMARY_ASSETS, type PerpAsset } from './contracts.js';
+import { BOOTSTRAP_CONFIG } from './frozenTrials.js';
 
 export interface TimedNav {
   time: number;
@@ -38,7 +39,10 @@ function requireFinite(values: readonly number[], label: string): void {
 export function arithmeticMean(values: readonly number[]): number {
   if (values.length === 0) throw new Error('Mean requires at least one value');
   requireFinite(values, 'Mean input');
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (values.every((value) => value === values[0])) return values[0];
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (!Number.isFinite(mean)) throw new Error('Mean is non-finite');
+  return mean;
 }
 
 export function sampleStandardDeviation(values: readonly number[]): number | null {
@@ -81,10 +85,12 @@ export function maxDrawdown(points: readonly TimedNav[]): number {
   let lastTime = -Infinity;
   let peak = -Infinity;
   let maximum = 0;
-  for (const point of points) {
-    if (!Number.isFinite(point.time) || !Number.isFinite(point.nav) || point.nav <= 0) {
-      throw new Error('Drawdown NAV points must be finite and positive');
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    if (!Number.isFinite(point.time) || !Number.isFinite(point.nav)) {
+      throw new Error('Drawdown NAV points must be finite');
     }
+    if (index === 0 && point.nav <= 0) throw new Error('Drawdown anchor NAV must be positive');
     if (point.time < lastTime) throw new Error('Drawdown NAV points must be chronological');
     lastTime = point.time;
     peak = Math.max(peak, point.nav);
@@ -109,6 +115,13 @@ export function navReturns(points: readonly TimedNav[]): number[] {
 }
 
 export function episodeMetrics(episodes: readonly EpisodePnl[]): EpisodeMetrics {
+  for (const episode of episodes) {
+    if (
+      !Number.isInteger(episode.startTime)
+      || !Number.isInteger(episode.endTime)
+      || episode.endTime <= episode.startTime
+    ) throw new Error('Episode timestamps are invalid');
+  }
   const pnl = episodes.map((episode) => episode.pnl);
   requireFinite(pnl, 'Episode PnL');
   if (pnl.length === 0) {
@@ -138,7 +151,7 @@ export function episodeMetrics(episodes: readonly EpisodePnl[]): EpisodeMetrics 
 export function positiveAssetConcentration(
   netPnlByAsset: Partial<Record<PerpAsset, number>>,
 ): number | null {
-  const values = PERP_ASSETS.map((asset) => netPnlByAsset[asset] ?? 0);
+  const values = PRIMARY_ASSETS.map((asset) => netPnlByAsset[asset] ?? 0);
   requireFinite(values, 'Asset PnL');
   const positive = values.map((value) => Math.max(0, value));
   const denominator = positive.reduce((sum, value) => sum + value, 0);
@@ -162,11 +175,11 @@ export function nextXorshift32(state: number): number {
 export function circularBlockBootstrapLowerBound(
   returns: readonly number[],
   trialId: string,
-  replicates = 10_000,
-  blockLength = 7,
+  replicates: number = BOOTSTRAP_CONFIG.replicates,
+  blockLength: number = BOOTSTRAP_CONFIG.blockLength,
 ): number {
   if (returns.length < blockLength) throw new Error('Bootstrap requires at least seven returns');
-  if (replicates !== 10_000 || blockLength !== 7) {
+  if (replicates !== BOOTSTRAP_CONFIG.replicates || blockLength !== BOOTSTRAP_CONFIG.blockLength) {
     throw new Error('Frozen bootstrap requires 10,000 seven-day replicates');
   }
   requireFinite(returns, 'Bootstrap returns');
@@ -186,7 +199,10 @@ export function circularBlockBootstrapLowerBound(
     means[replicate] = sum / returns.length;
   }
   means.sort((left, right) => left - right);
-  const index = Math.floor((1 / 60) * (replicates - 1));
-  if (index !== 166 || !Number.isFinite(means[index])) throw new Error('Invalid bootstrap quantile');
+  const index = Math.floor(BOOTSTRAP_CONFIG.familyAlpha * (replicates - 1));
+  if (
+    index !== BOOTSTRAP_CONFIG.lowerQuantileIndex
+    || !Number.isFinite(means[index])
+  ) throw new Error('Invalid bootstrap quantile');
   return means[index];
 }

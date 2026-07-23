@@ -17,6 +17,33 @@ export const HOLDOUT_START_TIME = Date.parse('2025-07-22T00:00:00.000Z');
 export const HALF_SPLIT_TIME = Date.parse('2026-01-20T00:00:00.000Z');
 export const INITIAL_NAV = 3_000;
 
+export const BOOTSTRAP_CONFIG = Object.freeze({
+  replicates: 10_000,
+  blockLength: 7,
+  familyAlpha: 0.05 / 3,
+  lowerQuantileIndex: 166,
+});
+
+export const FAMILY_DSR_CONFIG = Object.freeze({
+  trialIds: Object.freeze(['H1', 'H2', 'H3', 'H4'] as const),
+  trialCount: 4,
+  minimumDailyReturns: 3,
+  eulerGamma: 0.5772156649015329,
+});
+
+export const TRIAL_GATE_CONFIG = Object.freeze({
+  maximumDrawdown: 0.08,
+  minimumEffectiveEpisodes: 40,
+  minimumAnnualizedDailySharpe: 1,
+  minimumProfitFactor: 1.25,
+  minimumDsr: 0.95,
+  maximumTopFiveConcentration: 0.5,
+  maximumAssetConcentration: 0.8,
+  strictlyPositiveFloor: 0,
+  requiredSleeveCounts: Object.freeze({ H2: 2, H3: 2, H4: 1 } as const),
+  assetConcentrationApplicable: Object.freeze({ H2: true, H3: true, H4: false } as const),
+});
+
 export const HOLDOUT_WINDOW: Readonly<TrialWindow> = Object.freeze({
   startTime: HOLDOUT_START_TIME,
   endTime: AS_OF_TIME,

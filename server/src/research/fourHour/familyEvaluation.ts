@@ -6,6 +6,7 @@ import {
   sampleStandardDeviation,
   type ReturnMoments,
 } from './metrics.js';
+import { FAMILY_DSR_CONFIG, TRIAL_GATE_CONFIG } from './frozenTrials.js';
 
 function horner(x: number, coefficients: readonly number[]): number {
   return coefficients.reduceRight((value, coefficient) => value * x + coefficient, 0);
@@ -195,7 +196,7 @@ export interface DsrTrialInput {
 
 export interface DsrTrialResult {
   id: 'H1' | StrategyId;
-  moments: ReturnMoments;
+  moments: ReturnMoments | null;
   selectionSharpe: number | null;
   dsr: number | null;
 }
@@ -207,55 +208,117 @@ export interface DsrFamilyResult {
   trials: DsrTrialResult[];
 }
 
+interface PreparedDsrTrial extends DsrTrialResult {
+  allZero: boolean;
+  observationCount: number;
+  validReturns: boolean;
+}
+
+function unavailableDsrFamily(trials: readonly DsrTrialResult[]): DsrFamilyResult {
+  return {
+    available: false,
+    sigmaSharpe: null,
+    expectedMaxSharpe: null,
+    trials: trials.map((trial) => ({ ...trial, dsr: null })),
+  };
+}
+
 export function deflatedSharpeFamily(inputs: readonly DsrTrialInput[]): DsrFamilyResult {
-  if (inputs.length !== 4 || inputs.map((input) => input.id).join(',') !== 'H1,H2,H3,H4') {
+  if (
+    inputs.length !== FAMILY_DSR_CONFIG.trialCount
+    || inputs.map((input) => input.id).join(',') !== FAMILY_DSR_CONFIG.trialIds.join(',')
+  ) {
     throw new Error('DSR requires frozen H1,H2,H3,H4 order');
   }
-  const trials = inputs.map((input): DsrTrialResult => {
-    const moments = returnMoments(input.returns);
-    const allZero = input.returns.every((value) => value === 0);
+  const prepared = inputs.map((input): PreparedDsrTrial => {
+    const returnsAreArray = Array.isArray(input.returns);
+    const validReturns = returnsAreArray
+      && input.returns.every((value) => Number.isFinite(value));
+    let moments: ReturnMoments | null = null;
+    if (validReturns && input.returns.length > 0) {
+      try {
+        moments = returnMoments(input.returns);
+      } catch {
+        moments = null;
+      }
+    }
+    const allZero = validReturns
+      && input.returns.length > 0
+      && input.returns.every((value) => value === 0);
     return {
       id: input.id,
       moments,
-      selectionSharpe: allZero ? 0 : moments.perPeriodSharpe,
+      selectionSharpe: allZero ? 0 : moments?.perPeriodSharpe ?? null,
       dsr: null,
+      allZero,
+      observationCount: returnsAreArray ? input.returns.length : 0,
+      validReturns,
     };
   });
+  const trials: DsrTrialResult[] = prepared.map((trial) => ({
+    id: trial.id,
+    moments: trial.moments,
+    selectionSharpe: trial.selectionSharpe,
+    dsr: null,
+  }));
+  if (prepared.some((trial) => (
+    !trial.validReturns
+    || trial.observationCount < FAMILY_DSR_CONFIG.minimumDailyReturns
+    || trial.moments === null
+    || (!trial.allZero && (
+      trial.moments.perPeriodSharpe === null
+      || trial.moments.skewness === null
+      || trial.moments.kurtosis === null
+    ))
+  ))) return unavailableDsrFamily(trials);
+
   const sharpes = trials.map((trial) => trial.selectionSharpe);
   if (sharpes.some((value) => value === null || !Number.isFinite(value))) {
-    return { available: false, sigmaSharpe: null, expectedMaxSharpe: null, trials };
+    return unavailableDsrFamily(trials);
   }
-  const sigmaSharpe = sampleStandardDeviation(sharpes as number[]);
+  let sigmaSharpe: number | null;
+  try {
+    sigmaSharpe = sampleStandardDeviation(sharpes as number[]);
+  } catch {
+    sigmaSharpe = null;
+  }
   if (sigmaSharpe === null || !Number.isFinite(sigmaSharpe)) {
-    return { available: false, sigmaSharpe: null, expectedMaxSharpe: null, trials };
+    return unavailableDsrFamily(trials);
   }
-  const nTrials = 4;
-  const gamma = 0.5772156649015329;
+  const nTrials = FAMILY_DSR_CONFIG.trialCount;
+  const gamma = FAMILY_DSR_CONFIG.eulerGamma;
   const expectedMaxSharpe = sigmaSharpe * (
     (1 - gamma) * normalInverseCdf(1 - 1 / nTrials)
     + gamma * normalInverseCdf(1 - 1 / (nTrials * Math.E))
   );
-  for (const trial of trials) {
-    const { moments } = trial;
-    const sharpe = moments.perPeriodSharpe;
-    if (
-      sharpe === null
-      || moments.skewness === null
-      || moments.kurtosis === null
-      || trial.selectionSharpe === 0 && moments.sampleStd === 0
-    ) continue;
-    const radicand = 1 - moments.skewness * sharpe
-      + ((moments.kurtosis - 1) / 4) * sharpe ** 2;
-    if (!(radicand > 0) || inputs.find((input) => input.id === trial.id)!.returns.length < 3) {
+  if (!Number.isFinite(expectedMaxSharpe)) return unavailableDsrFamily(trials);
+
+  const computedDsr: Array<number | null> = [];
+  for (let index = 0; index < prepared.length; index += 1) {
+    const trial = prepared[index];
+    if (trial.allZero) {
+      computedDsr.push(null);
       continue;
     }
+    const moments = trial.moments!;
+    const sharpe = moments.perPeriodSharpe!;
+    const radicand = 1 - moments.skewness * sharpe
+      + ((moments.kurtosis! - 1) / 4) * sharpe ** 2;
+    if (!(radicand > 0) || !Number.isFinite(radicand)) return unavailableDsrFamily(trials);
     const statistic = (sharpe - expectedMaxSharpe)
-      * Math.sqrt(inputs.find((input) => input.id === trial.id)!.returns.length - 1)
+      * Math.sqrt(trial.observationCount - 1)
       / Math.sqrt(radicand);
+    if (!Number.isFinite(statistic)) return unavailableDsrFamily(trials);
     const dsr = normalCdf(statistic);
-    trial.dsr = Number.isFinite(dsr) ? dsr : null;
+    if (!Number.isFinite(dsr)) return unavailableDsrFamily(trials);
+    computedDsr.push(dsr);
   }
-  return { available: true, sigmaSharpe, expectedMaxSharpe, trials };
+  return {
+    available: true,
+    sigmaSharpe,
+    expectedMaxSharpe,
+    trials: trials.map((trial, index) => ({ ...trial, dsr: computedDsr[index] })),
+  };
 }
 
 export interface TrialGateInput {
@@ -286,40 +349,151 @@ export interface TrialGateResult {
   reasons: string[];
 }
 
+function validateTrialGateInput(input: TrialGateInput): string[] {
+  const invalid: string[] = [];
+  const finiteFields: Array<[string, number]> = [
+    ['baseMaxDrawdown', input.baseMaxDrawdown],
+    ['stressMaxDrawdown', input.stressMaxDrawdown],
+    ['stressAdjustedPnl', input.stressAdjustedPnl],
+  ];
+  const nullableFiniteFields: Array<[string, number | null]> = [
+    ['baseExpectancy', input.baseExpectancy],
+    ['stressExpectancy', input.stressExpectancy],
+    ['adverseBoundaryStressExpectancy', input.adverseBoundaryStressExpectancy],
+    ['baseAnnualizedSharpe', input.baseAnnualizedSharpe],
+    ['baseProfitFactor', input.baseProfitFactor],
+    ['bootstrapLowerBound', input.bootstrapLowerBound],
+    ['dsr', input.dsr],
+    ['topFiveConcentration', input.topFiveConcentration],
+    ['assetConcentration', input.assetConcentration],
+  ];
+  for (const [field, value] of finiteFields) {
+    if (!Number.isFinite(value)) invalid.push(field);
+  }
+  for (const [field, value] of nullableFiniteFields) {
+    if (value !== null && !Number.isFinite(value)) invalid.push(field);
+  }
+  if (input.baseMaxDrawdown < 0) invalid.push('baseMaxDrawdownRange');
+  if (input.stressMaxDrawdown < 0) invalid.push('stressMaxDrawdownRange');
+  if (input.baseProfitFactor !== null && input.baseProfitFactor < 0) {
+    invalid.push('baseProfitFactorRange');
+  }
+  if (input.dsr !== null && (input.dsr < 0 || input.dsr > 1)) invalid.push('dsrRange');
+  if (
+    input.topFiveConcentration !== null
+    && (input.topFiveConcentration < 0 || input.topFiveConcentration > 1)
+  ) invalid.push('topFiveConcentrationRange');
+  if (
+    input.assetConcentration !== null
+    && (input.assetConcentration < 0 || input.assetConcentration > 1)
+  ) invalid.push('assetConcentrationRange');
+  if (!Number.isSafeInteger(input.effectiveEpisodes) || input.effectiveEpisodes < 0) {
+    invalid.push('effectiveEpisodes');
+  }
+  const expectedSleeves = TRIAL_GATE_CONFIG.requiredSleeveCounts[input.id];
+  if (
+    !Array.isArray(input.requiredSleevePnl)
+    || input.requiredSleevePnl.length !== expectedSleeves
+    || input.requiredSleevePnl.some((value) => !Number.isFinite(value))
+  ) invalid.push('requiredSleevePnl');
+  if (
+    !Array.isArray(input.halfAdjustedPnl)
+    || input.halfAdjustedPnl.length !== 2
+    || input.halfAdjustedPnl.some((value) => !Number.isFinite(value))
+  ) invalid.push('halfAdjustedPnl');
+  if (typeof input.assetConcentrationApplicable !== 'boolean') {
+    invalid.push('assetConcentrationApplicable');
+  } else if (
+    input.assetConcentrationApplicable
+    !== TRIAL_GATE_CONFIG.assetConcentrationApplicable[input.id]
+  ) invalid.push('assetConcentrationOwnership');
+  if (typeof input.requiredSleevesWithExposure !== 'boolean') {
+    invalid.push('requiredSleevesWithExposure');
+  }
+  const expectancies = [
+    input.baseExpectancy,
+    input.stressExpectancy,
+    input.adverseBoundaryStressExpectancy,
+  ];
+  if (
+    Number.isSafeInteger(input.effectiveEpisodes)
+    && input.effectiveEpisodes >= 0
+    && (
+      (input.effectiveEpisodes === 0 && expectancies.some((value) => value !== null))
+      || (input.effectiveEpisodes > 0 && expectancies.some((value) => value === null))
+    )
+  ) invalid.push('expectancyEpisodeConsistency');
+  return [...new Set(invalid)].map((field) => `invalid_${field}`);
+}
+
 export function evaluateTrial(input: TrialGateInput): TrialGateResult {
-  if (input.error) return { id: input.id, verdict: 'ERROR', reasons: [input.error] };
+  if (input.id !== 'H2' && input.id !== 'H3' && input.id !== 'H4') {
+    throw new Error('Trial gate input has an invalid strategy ID');
+  }
+  if (input.error !== undefined && input.error !== null) {
+    if (typeof input.error === 'string' && input.error.length > 0) {
+      return { id: input.id, verdict: 'ERROR', reasons: [input.error] };
+    }
+    return { id: input.id, verdict: 'ERROR', reasons: ['invalid_error'] };
+  }
+  const invalid = validateTrialGateInput(input);
+  if (invalid.length > 0) return { id: input.id, verdict: 'ERROR', reasons: invalid };
+
+  const gates = TRIAL_GATE_CONFIG;
   const reject: string[] = [];
-  if (input.baseExpectancy !== null && input.baseExpectancy <= 0) reject.push('base_expectancy');
-  if (input.stressExpectancy !== null && input.stressExpectancy <= 0) reject.push('stress_expectancy');
+  if (
+    input.baseExpectancy !== null
+    && input.baseExpectancy <= gates.strictlyPositiveFloor
+  ) reject.push('base_expectancy');
+  if (
+    input.stressExpectancy !== null
+    && input.stressExpectancy <= gates.strictlyPositiveFloor
+  ) reject.push('stress_expectancy');
   if (
     input.adverseBoundaryStressExpectancy !== null
-    && input.adverseBoundaryStressExpectancy <= 0
+    && input.adverseBoundaryStressExpectancy <= gates.strictlyPositiveFloor
   ) reject.push('boundary_funding_expectancy');
-  if (input.baseMaxDrawdown > 0.08) reject.push('base_drawdown');
-  if (input.stressMaxDrawdown > 0.08) reject.push('stress_drawdown');
-  if (input.requiredSleevePnl.some((value) => value < 0)) reject.push('required_sleeve');
+  if (input.baseMaxDrawdown > gates.maximumDrawdown) reject.push('base_drawdown');
+  if (input.stressMaxDrawdown > gates.maximumDrawdown) reject.push('stress_drawdown');
+  if (
+    input.requiredSleevePnl.some((value) => value < gates.strictlyPositiveFloor)
+  ) reject.push('required_sleeve');
   if (reject.length > 0) return { id: input.id, verdict: 'REJECT', reasons: reject };
 
   const insufficient: string[] = [];
-  if (input.effectiveEpisodes < 40) insufficient.push('episodes');
-  if (input.baseAnnualizedSharpe === null || input.baseAnnualizedSharpe < 1) {
+  if (input.effectiveEpisodes < gates.minimumEffectiveEpisodes) insufficient.push('episodes');
+  if (
+    input.baseAnnualizedSharpe === null
+    || input.baseAnnualizedSharpe < gates.minimumAnnualizedDailySharpe
+  ) {
     insufficient.push('sharpe');
   }
-  if (input.baseProfitFactor === null || input.baseProfitFactor < 1.25) {
+  if (input.baseProfitFactor === null || input.baseProfitFactor < gates.minimumProfitFactor) {
     insufficient.push('profit_factor');
   }
-  if (input.stressAdjustedPnl <= 0) insufficient.push('stress_pnl');
-  if (input.bootstrapLowerBound === null || input.bootstrapLowerBound <= 0) {
+  if (input.stressAdjustedPnl <= gates.strictlyPositiveFloor) insufficient.push('stress_pnl');
+  if (
+    input.bootstrapLowerBound === null
+    || input.bootstrapLowerBound <= gates.strictlyPositiveFloor
+  ) {
     insufficient.push('bootstrap');
   }
-  if (input.dsr === null || input.dsr < 0.95) insufficient.push('dsr');
-  if (input.halfAdjustedPnl.some((value) => value < 0)) insufficient.push('halves');
-  if (input.topFiveConcentration === null || input.topFiveConcentration > 0.5) {
+  if (input.dsr === null || input.dsr < gates.minimumDsr) insufficient.push('dsr');
+  if (
+    input.halfAdjustedPnl.some((value) => value < gates.strictlyPositiveFloor)
+  ) insufficient.push('halves');
+  if (
+    input.topFiveConcentration === null
+    || input.topFiveConcentration > gates.maximumTopFiveConcentration
+  ) {
     insufficient.push('top_five_concentration');
   }
   if (
     input.assetConcentrationApplicable
-    && (input.assetConcentration === null || input.assetConcentration > 0.8)
+    && (
+      input.assetConcentration === null
+      || input.assetConcentration > gates.maximumAssetConcentration
+    )
   ) insufficient.push('asset_concentration');
   if (!input.requiredSleevesWithExposure) insufficient.push('required_sleeve_exposure');
   return {
@@ -338,6 +512,14 @@ export function aggregateFamily(results: readonly TrialGateResult[]): FamilyGate
   if (results.length !== 3 || results.map((result) => result.id).join(',') !== 'H2,H3,H4') {
     throw new Error('Family result requires frozen H2,H3,H4 order');
   }
+  const verdicts: readonly TrialVerdict[] = [
+    'ERROR', 'REJECT', 'INSUFFICIENT', 'ADVANCE_TO_FORWARD_PAPER',
+  ];
+  if (results.some((result) => (
+    !verdicts.includes(result.verdict)
+    || !Array.isArray(result.reasons)
+    || result.reasons.some((reason) => typeof reason !== 'string')
+  ))) return { verdict: 'ERROR', selectedTrial: null };
   if (results.some((result) => result.verdict === 'ERROR')) {
     return { verdict: 'ERROR', selectedTrial: null };
   }
