@@ -8,8 +8,11 @@
     "start": "node dist/index.js",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test": "jest --runInBand",
+    "test:coverage": "jest --coverage --runInBand",
+    "research:trend:snapshot": "tsx src/research/cli.ts snapshot",
+    "research:trend": "tsx src/research/cli.ts run",
+    "research:trend:report": "tsx src/research/cli.ts report"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

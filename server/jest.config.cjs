@@ -19,8 +19,18 @@ const config = {
   collectCoverageFrom: [
     'src/services/trading/**/*.ts',
     'src/utils/**/*.ts',
+    'src/research/**/*.ts',
+    '!src/research/cli.ts',
     '!src/**/*.d.ts',
   ],
+  coverageThreshold: {
+    'src/research/': {
+      branches: 80,
+      functions: 90,
+      lines: 90,
+      statements: 90,
+    },
+  },
 };
 
 module.exports = config;

@@ -115,7 +115,7 @@ Fetch time and the raw HTTP response are non-canonical provenance. The content a
 hashes only the normalized, sorted candles plus frozen source/request configuration;
 identical normalized input and config must therefore produce the same data SHA-256 even
 if raw JSON ordering differs. A separate artifact SHA-256
-covers the full stored envelope, including raw-response page hashes. Canonical data and
+covers the full stored envelope, including the raw-response hash. Canonical data and
 result JSON use stable key ordering.
 
 The snapshot writer records raw-response SHA-256 values and refuses to overwrite an
@@ -265,7 +265,7 @@ Hyperliquid /info candleSnapshot (read only)
 
 1. `server/src/research/kernel.ts` — pure indicators, signal, deterministic portfolio,
    metrics, stress run, and verdict.
-2. `server/src/research/hyperliquid.ts` — strict paginated official candle adapter plus
+2. `server/src/research/hyperliquid.ts` — strict full-range official candle adapter plus
    canonical snapshot read/write and SHA-256.
 3. `server/src/research/cli.ts` — frozen H1 runner, snapshot command, and JSON report.
 4. `server/src/__tests__/researchKernel.test.ts` — chronology, math, split isolation,

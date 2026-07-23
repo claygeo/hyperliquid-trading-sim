@@ -17,7 +17,10 @@
     "typecheck:client": "cd client && npx tsc --noEmit",
     "typecheck:server": "cd server && npm run typecheck",
     "test": "cd server && npm test",
-    "test:coverage": "cd server && npm run test:coverage"
+    "test:coverage": "cd server && npm run test:coverage",
+    "research:trend:snapshot": "npm --prefix server run research:trend:snapshot",
+    "research:trend": "npm --prefix server run research:trend",
+    "research:trend:report": "npm --prefix server run research:trend:report"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

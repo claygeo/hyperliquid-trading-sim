@@ -56,8 +56,8 @@ export function rateLimitMiddleware(
   next();
 }
 
-// Cleanup old entries periodically
-setInterval(() => {
+// Cleanup old entries periodically without keeping shutdown/test processes alive.
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of store.entries()) {
     if (now > entry.resetTime) {
@@ -65,3 +65,4 @@ setInterval(() => {
     }
   }
 }, WINDOW_MS);
+cleanupTimer.unref();
