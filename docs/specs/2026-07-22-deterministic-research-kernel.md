@@ -139,7 +139,11 @@ the doubled-cost price-edge stress:
 - raw asset trades and effective independent exposure episodes; overlapping BTC/ETH
   long exposure is one effective episode whose PnL is the NAV change while any position
   is open, including all modeled costs;
-- exposure and turnover;
+- exits and entries sharing one execution timestamp are evaluated as one batch: a direct
+  asset rotation remains the same episode unless aggregate exposure is zero after the
+  entire batch, preventing same-open rotations from inflating the independent count;
+- exposure is the fraction of UTC days with a position held at any point; turnover is
+  total entry-plus-exit reference notional divided by average daily NAV;
 - largest-trade concentration; top-five concentration is the sum of the five largest
   positive completed-trade PnLs divided by all positive completed-trade PnL;
 - per-asset positive-PnL concentration, with an 80% single-asset ceiling;
