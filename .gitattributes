@@ -1,0 +1,31 @@
+# Line endings are pinned to LF for every tracked file.
+#
+# WHY THIS EXISTS (do not remove):
+# The four-hour research evaluator hashes a source bundle over this specification,
+# everything under server/src/research/fourHour/, server/package.json,
+# server/tsconfig.json, and server/jest.config.cjs. That bundle was read from the
+# WORKING TREE while core.autocrlf=true was in effect globally, which made
+# sourceBundleSha256 a function of (commit x local checkout normalization) rather
+# than of the commit alone.
+#
+# Git's clean filter strips CR before comparing, so `git status` reported a clean
+# worktree while server/package.json, server/tsconfig.json and server/jest.config.cjs
+# actually held CRLF on disk and LF in the object database.
+#
+# Two failure modes followed. First, a sealed snapshot would record a source hash
+# that nobody could reproduce from the commit on another machine, permanently, in a
+# one-shot artifact the specification forbids replacing. Second, and worse: any
+# checkout, stash, restore, or branch switch would re-materialise the fourHour
+# sources as CRLF, flipping the bundle hash while HEAD and `git status` stayed
+# unchanged, at which point assertEvaluatorCompatible would permanently reject an
+# already-fetched canonical snapshot and brick the research family.
+#
+# Pinning LF removes the platform dependence. The evaluator additionally reads the
+# bundle from committed git blobs rather than the worktree, so this file is defence
+# in depth rather than the only guard.
+* text eol=lf
+
+*.png binary
+*.jpg binary
+*.gz binary
+*.ico binary
