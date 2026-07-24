@@ -30,6 +30,51 @@ interface FetchResponseLike {
   status: number;
   statusText: string;
   text(): Promise<string>;
+  /** Present on a real Response; optional so existing test doubles stay valid. */
+  headers?: { get(name: string): string | null };
+}
+
+/**
+ * Request pacing and retry.
+ *
+ * Hyperliquid enforces a per-IP REST budget of 1200 weight per minute. A canonical
+ * family snapshot is 151 requests (41 candle pages + 109 funding pages + spotMeta).
+ * Candle pages cost roughly 20 base weight plus one per 60 rows returned, so 500-row
+ * pages are around 29 weight each; treating every request as 30 weight puts the full
+ * snapshot near 4,500 weight, which is several times the per-minute allowance.
+ *
+ * Without pacing the snapshot would fail partway through with an HTTP error. Because
+ * the snapshot is one-shot and the specification forbids replacing data without new
+ * trial IDs, a partial fetch wastes the attempt rather than degrading gracefully.
+ *
+ * 2000ms between requests is about 30 requests per minute, roughly 900 weight per
+ * minute, leaving headroom under the documented ceiling. The full snapshot therefore
+ * takes about five minutes, which is the correct trade for a once-only acquisition.
+ */
+const REQUEST_MIN_INTERVAL_MS = 2_000;
+const REQUEST_MAX_ATTEMPTS = 6;
+const RETRY_BACKOFF_MS = [2_000, 5_000, 15_000, 45_000, 90_000] as const;
+
+/** Serialises pacing across every caller in this module. */
+let lastRequestStartedAtMs = 0;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+function retryAfterMs(response: FetchResponseLike): number | null {
+  const raw = response.headers?.get('retry-after');
+  if (raw === null || raw === undefined || raw === '') return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 120_000);
+  const at = Date.parse(raw);
+  if (Number.isFinite(at)) return Math.max(0, Math.min(at - Date.now(), 120_000));
+  return null;
+}
+
+/** 429 and 5xx are transient. Every other non-OK status is a contract failure. */
+function isTransient(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 export type FourHourFetch = (
@@ -77,6 +122,19 @@ export interface FourHourFetchOptions {
   endpoint?: string;
   fetchImpl?: FourHourFetch;
   clock?: FourHourClock;
+  /**
+   * Injectable delay. Tests supply a no-op so pacing and retry logic are exercised
+   * without real waiting; production uses setTimeout. Pacing affects request timing
+   * only and can never alter a stored byte or a raw-response hash.
+   */
+  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Inter-request pacing is opt-in because it is policy, not mechanism. The CLI turns
+   * it on for real acquisition; unit tests drive mocked transports where waiting two
+   * seconds per page would add minutes and prove nothing. Retry on transient status
+   * codes is always active, since that is correctness rather than policy.
+   */
+  pacingEnabled?: boolean;
 }
 
 export type SpotMetaFetchOptions = FourHourFetchOptions;
@@ -153,26 +211,61 @@ async function postOfficial(
   options: FourHourFetchOptions,
 ): Promise<{ decoded: unknown; rawResponseSha256: string; fetchedAt: string }> {
   const { endpoint, fetchImpl } = resolveFetch(options);
-  const response = await fetchImpl(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`${label} failed ${response.status} ${response.statusText}`);
+  const sleep = options.sleep ?? defaultSleep;
+  const serialised = JSON.stringify(body);
+
+  let lastTransient = '';
+  for (let attempt = 0; attempt < REQUEST_MAX_ATTEMPTS; attempt += 1) {
+    if (options.pacingEnabled === true) {
+      const waitMs = lastRequestStartedAtMs + REQUEST_MIN_INTERVAL_MS - Date.now();
+      if (waitMs > 0) await sleep(waitMs);
+      lastRequestStartedAtMs = Date.now();
+    }
+
+    const response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: serialised,
+    });
+    const raw = await response.text();
+
+    if (!response.ok) {
+      if (isTransient(response.status)) {
+        lastTransient = `${response.status} ${response.statusText}`;
+        if (attempt < REQUEST_MAX_ATTEMPTS - 1) {
+          const backoff = retryAfterMs(response)
+            ?? RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)];
+          await sleep(backoff);
+          continue;
+        }
+        // Exhausting retries is reported as such. Returning partial or synthesised data
+        // here would silently corrupt a one-shot snapshot that cannot be replaced.
+        throw new Error(
+          `${label} failed ${lastTransient} after ${REQUEST_MAX_ATTEMPTS} attempts`,
+        );
+      }
+      throw new Error(`${label} failed ${response.status} ${response.statusText}`);
+    }
+
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(raw);
+    } catch {
+      throw new Error(`${label} was not valid JSON`);
+    }
+    return {
+      decoded,
+      rawResponseSha256: sha256(raw),
+      fetchedAt: fetchedAtFromClock(options),
+    };
   }
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(raw);
-  } catch {
-    throw new Error(`${label} was not valid JSON`);
-  }
-  return {
-    decoded,
-    rawResponseSha256: sha256(raw),
-    fetchedAt: fetchedAtFromClock(options),
-  };
+
+  // Unreachable: every path inside the loop either returns or throws. Retained as a
+  // fail-closed guard so a future edit to the loop cannot fall through to an implicit
+  // undefined return.
+  throw new Error(
+    `${label} exhausted ${REQUEST_MAX_ATTEMPTS} attempts; last transient status ${lastTransient}`,
+  );
 }
 
 function validateWindow(

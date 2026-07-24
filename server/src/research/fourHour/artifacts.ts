@@ -180,36 +180,72 @@ export function calculateSourceBundleSha256(files: readonly SourceBundleFile[]):
   return sha256(canonicalJson(normalized));
 }
 
-async function collectDirectoryFiles(
-  repositoryRoot: string,
-  relativeDirectory: string,
-): Promise<SourceBundleFile[]> {
-  const absoluteDirectory = path.resolve(repositoryRoot, relativeDirectory);
-  const entries = await readdir(absoluteDirectory, { withFileTypes: true });
-  const files: SourceBundleFile[] = [];
-  for (const entry of entries.sort((left, right) => compareOrdinal(left.name, right.name))) {
-    const relativePath = normalizeSourcePath(`${relativeDirectory}/${entry.name}`);
-    if (entry.isSymbolicLink()) throw new Error(`Evaluator source cannot contain symlink ${relativePath}`);
-    if (entry.isDirectory()) {
-      files.push(...await collectDirectoryFiles(repositoryRoot, relativePath));
-    } else if (entry.isFile()) {
-      files.push({ relativePath, bytes: await readFile(path.resolve(repositoryRoot, relativePath), 'utf8') });
-    } else {
-      throw new Error(`Unsupported evaluator source entry ${relativePath}`);
+/**
+ * Source of the evaluator bytes.
+ *
+ * This indirection exists because reading the WORKING TREE made sourceBundleSha256 a
+ * function of (commit x local checkout normalization) rather than of the commit. With
+ * core.autocrlf enabled and no .gitattributes, three bundle files held CRLF on disk and
+ * LF in the object database while `git status` still reported clean, because git's clean
+ * filter strips CR before comparing. That divergence would have been sealed permanently
+ * into the one-shot canonical snapshot, and any later checkout could have flipped the
+ * hash and made an already-fetched snapshot permanently unusable.
+ *
+ * Production therefore reads committed blobs. The disk reader is retained for tests,
+ * which construct fixture trees that were never committed.
+ */
+export interface EvaluatorSourceReader {
+  /** Recursively list files under a repository-relative directory, sorted by path. */
+  list(relativeDirectory: string): Promise<EvaluatorSourceEntry[]>;
+  /** Read a repository-relative file as UTF-8. */
+  read(relativePath: string): Promise<string>;
+}
+
+export interface EvaluatorSourceEntry {
+  relativePath: string;
+  isSymbolicLink: boolean;
+}
+
+export function createDiskSourceReader(repositoryRoot: string): EvaluatorSourceReader {
+  const root = path.resolve(repositoryRoot);
+  const walk = async (relativeDirectory: string): Promise<EvaluatorSourceEntry[]> => {
+    const entries = await readdir(path.resolve(root, relativeDirectory), { withFileTypes: true });
+    const out: EvaluatorSourceEntry[] = [];
+    for (const entry of entries.sort((left, right) => compareOrdinal(left.name, right.name))) {
+      const relativePath = normalizeSourcePath(`${relativeDirectory}/${entry.name}`);
+      if (entry.isSymbolicLink()) {
+        out.push({ relativePath, isSymbolicLink: true });
+      } else if (entry.isDirectory()) {
+        out.push(...await walk(relativePath));
+      } else if (entry.isFile()) {
+        out.push({ relativePath, isSymbolicLink: false });
+      } else {
+        throw new Error(`Unsupported evaluator source entry ${relativePath}`);
+      }
     }
-  }
-  return files;
+    return out;
+  };
+  return {
+    list: walk,
+    read: (relativePath) => readFile(path.resolve(root, relativePath), 'utf8'),
+  };
 }
 
 export async function collectEvaluatorSourceBundle(
   repositoryRoot: string,
+  reader: EvaluatorSourceReader = createDiskSourceReader(repositoryRoot),
 ): Promise<SourceBundleFile[]> {
-  const root = path.resolve(repositoryRoot);
   const fixed = await Promise.all(EVALUATOR_FIXED_FILES.map(async (relativePath) => ({
     relativePath,
-    bytes: await readFile(path.resolve(root, relativePath), 'utf8'),
+    bytes: await reader.read(relativePath),
   })));
-  const recursive = await collectDirectoryFiles(root, 'server/src/research/fourHour');
+  const entries = await reader.list('server/src/research/fourHour');
+  const recursive: SourceBundleFile[] = [];
+  for (const entry of entries) {
+    const relativePath = normalizeSourcePath(entry.relativePath);
+    if (entry.isSymbolicLink) throw new Error(`Evaluator source cannot contain symlink ${relativePath}`);
+    recursive.push({ relativePath, bytes: await reader.read(relativePath) });
+  }
   validateEvaluatorImportClosure(recursive);
   return [...fixed, ...recursive]
     .sort((left, right) => compareOrdinal(left.relativePath, right.relativePath));

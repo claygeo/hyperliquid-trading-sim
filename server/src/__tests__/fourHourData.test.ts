@@ -18,16 +18,27 @@ interface MockResponseOptions {
   ok?: boolean;
   status?: number;
   statusText?: string;
+  retryAfter?: string;
 }
 
 function response(raw: string, options: MockResponseOptions = {}) {
+  const retryAfter = options.retryAfter;
   return {
     ok: options.ok ?? true,
     status: options.status ?? 200,
     statusText: options.statusText ?? 'OK',
     async text() { return raw; },
+    headers: {
+      get(name: string): string | null {
+        if (name.toLowerCase() === 'retry-after' && retryAfter !== undefined) return retryAfter;
+        return null;
+      },
+    },
   };
 }
+
+/** Retry tests must not actually wait; pacing/backoff timing is injected. */
+const noSleep = async (): Promise<void> => {};
 
 function rawSha256(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
@@ -204,9 +215,9 @@ describe('four-hour Hyperliquid data adapter', () => {
     };
     const cases: Array<[string, FourHourFetch, RegExp]> = [
       [
-        'HTTP failure',
-        injectedFetch(() => response('busy', { ok: false, status: 503, statusText: 'Unavailable' })),
-        /failed 503 Unavailable/,
+        'non-transient HTTP failure',
+        injectedFetch(() => response('bad', { ok: false, status: 400, statusText: 'Bad Request' })),
+        /failed 400 Bad Request/,
       ],
       ['malformed JSON', injectedFetch(() => '{'), /not valid JSON/],
       ['empty page', injectedFetch(() => '[]'), /empty or malformed/],
@@ -227,6 +238,119 @@ describe('four-hour Hyperliquid data adapter', () => {
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(label).toBeTruthy();
     }
+  });
+
+  /*
+   * Transient-failure handling exists because a canonical family snapshot is 151
+   * requests against a 1200-weight-per-minute per-IP budget. Before this, a single 429
+   * or 503 anywhere in that sequence aborted the whole acquisition. The snapshot is
+   * one-shot and the specification forbids replacing data without new trial IDs, so a
+   * partial fetch wastes the attempt rather than degrading.
+   */
+  describe('transient failure handling', () => {
+    const window = {
+      symbol: 'BTC' as const,
+      startTime: 0,
+      endTime: 2 * FOUR_HOUR_MS,
+      expectedBars: 2,
+    };
+    const goodPage = () => JSON.stringify([candleRow('BTC', 0), candleRow('BTC', FOUR_HOUR_MS)]);
+
+    test('retries a 429 and then succeeds, without altering the stored raw hash', async () => {
+      let call = 0;
+      const fetchImpl = jest.fn(async () => {
+        call += 1;
+        if (call === 1) return response('slow down', { ok: false, status: 429, statusText: 'Too Many Requests' });
+        return response(goodPage());
+      }) as unknown as jest.MockedFunction<FourHourFetch>;
+
+      const result = await fetchFourHourCandles(window, { fetchImpl, clock: fixedClock, sleep: noSleep });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(result.candles).toHaveLength(2);
+      // The hash must cover only the successful response body.
+      expect(result.pages[0].rawResponseSha256).toBe(rawSha256(goodPage()));
+    });
+
+    test('retries a 5xx and then succeeds', async () => {
+      let call = 0;
+      const fetchImpl = jest.fn(async () => {
+        call += 1;
+        if (call <= 2) return response('busy', { ok: false, status: 503, statusText: 'Unavailable' });
+        return response(goodPage());
+      }) as unknown as jest.MockedFunction<FourHourFetch>;
+
+      const result = await fetchFourHourCandles(window, { fetchImpl, clock: fixedClock, sleep: noSleep });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
+      expect(result.candles).toHaveLength(2);
+    });
+
+    test('honours a Retry-After header instead of the default backoff', async () => {
+      const waits: number[] = [];
+      let call = 0;
+      const fetchImpl = jest.fn(async () => {
+        call += 1;
+        if (call === 1) {
+          return response('slow down', {
+            ok: false, status: 429, statusText: 'Too Many Requests', retryAfter: '7',
+          });
+        }
+        return response(goodPage());
+      }) as unknown as jest.MockedFunction<FourHourFetch>;
+
+      await fetchFourHourCandles(window, {
+        fetchImpl,
+        clock: fixedClock,
+        sleep: async (ms: number) => { waits.push(ms); },
+      });
+
+      expect(waits).toContain(7000);
+    });
+
+    test('throws after exhausting attempts rather than returning partial data', async () => {
+      const fetchImpl = injectedFetch(
+        () => response('busy', { ok: false, status: 503, statusText: 'Unavailable' }),
+      );
+
+      await expect(fetchFourHourCandles(window, { fetchImpl, clock: fixedClock, sleep: noSleep }))
+        .rejects.toThrow(/failed 503 Unavailable after 6 attempts/);
+      expect(fetchImpl).toHaveBeenCalledTimes(6);
+    });
+
+    test('pacing is opt-in, so mocked transports are never delayed', async () => {
+      const waits: number[] = [];
+      const fetchImpl = injectedFetch(() => goodPage());
+
+      await fetchFourHourCandles(window, {
+        fetchImpl,
+        clock: fixedClock,
+        sleep: async (ms: number) => { waits.push(ms); },
+      });
+
+      expect(waits).toHaveLength(0);
+    });
+
+    test('pacing inserts a delay when explicitly enabled', async () => {
+      const waits: number[] = [];
+      const fetchImpl = injectedFetch(() => goodPage());
+
+      await fetchFourHourCandles(window, {
+        fetchImpl,
+        clock: fixedClock,
+        pacingEnabled: true,
+        sleep: async (ms: number) => { waits.push(ms); },
+      });
+      await fetchFourHourCandles(window, {
+        fetchImpl,
+        clock: fixedClock,
+        pacingEnabled: true,
+        sleep: async (ms: number) => { waits.push(ms); },
+      });
+
+      // The second acquisition must be held back behind the shared pacer.
+      expect(waits.some((ms) => ms > 0)).toBe(true);
+    });
   });
 
   test('rejects invalid candle windows before fetching', async () => {

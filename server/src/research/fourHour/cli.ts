@@ -17,6 +17,7 @@ import {
   writeFamilySnapshot,
   writeInitialTrialBatch,
   type CanonicalFamilySnapshot,
+  type EvaluatorSourceReader,
   type FamilyReportDraft,
   type FamilyReportEvidence,
   type FamilyReportPayload,
@@ -123,6 +124,12 @@ export const FOUR_HOUR_FAMILY_LIMITATIONS: readonly string[] = Object.freeze([
 
 const STRATEGY_IDS = Object.freeze(['H2', 'H3', 'H4'] as const);
 
+/**
+ * Only canonical acquisition paces requests. Pacing changes timing, never a stored
+ * byte or a raw-response hash, so it cannot influence any economic result.
+ */
+const CANONICAL_FETCH_POLICY = Object.freeze({ pacingEnabled: true as const });
+
 export interface FourHourCliDependencies {
   git(repositoryRoot: string, args: readonly string[]): Promise<string>;
   readText(filename: string): Promise<string>;
@@ -202,6 +209,52 @@ function defaultPaths(): FourHourCliPaths {
   };
 }
 
+/**
+ * Read evaluator source from committed git blobs rather than the working tree.
+ *
+ * The worktree is not a reliable source of the bytes a commit contains. With
+ * core.autocrlf enabled and no .gitattributes, git's clean filter hides a CRLF-versus-LF
+ * divergence from `git status`, so a "clean" tree can still hash differently from HEAD.
+ * Sealing that platform-dependent hash into the one-shot canonical snapshot would make
+ * the artifact irreproducible on any other machine, and a later checkout could flip the
+ * hash and cause assertEvaluatorCompatible to permanently reject the fetched snapshot.
+ *
+ * Reading the object database removes the platform from the equation entirely.
+ */
+export function createGitSourceReader(repositoryRoot: string): EvaluatorSourceReader {
+  const run = (args: readonly string[]): string => execFileSync('git', [...args], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return {
+    list: async (relativeDirectory) => {
+      const raw = run(['ls-tree', '-r', '-z', '--full-tree', 'HEAD', '--', relativeDirectory]);
+      return raw
+        .split('\0')
+        .filter((line) => line !== '')
+        .map((line) => {
+          const tabIndex = line.indexOf('\t');
+          if (tabIndex < 0) throw new Error(`Unparseable git tree entry for ${relativeDirectory}`);
+          const meta = line.slice(0, tabIndex).split(' ');
+          const mode = meta[0] ?? '';
+          const relativePath = line.slice(tabIndex + 1);
+          // Mode 120000 is a symlink; 160000 is a gitlink (submodule). Neither may
+          // contribute bytes to a hash that is supposed to pin the evaluator.
+          if (mode === '160000') {
+            throw new Error(`Evaluator source cannot contain submodule ${relativePath}`);
+          }
+          return { relativePath, isSymbolicLink: mode === '120000' };
+        })
+        .sort((left, right) => (
+          left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0
+        ));
+    },
+    read: async (relativePath) => run(['cat-file', 'blob', `HEAD:${relativePath}`]),
+  };
+}
+
 function defaultDependencies(): FourHourCliDependencies {
   return {
     git: async (repositoryRoot, args) => execFileSync('git', [...args], {
@@ -210,7 +263,11 @@ function defaultDependencies(): FourHourCliDependencies {
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim(),
     readText: (filename) => readFile(filename, 'utf8'),
-    collectSourceBundle: collectEvaluatorSourceBundle,
+    // Production hashes committed bytes, never the worktree. See createGitSourceReader.
+    collectSourceBundle: (repositoryRoot) => collectEvaluatorSourceBundle(
+      repositoryRoot,
+      createGitSourceReader(repositoryRoot),
+    ),
     calculateSourceBundle: calculateSourceBundleSha256,
     isCommitAncestor: async (repositoryRoot, ancestor, descendant) => {
       try {
@@ -225,9 +282,11 @@ function defaultDependencies(): FourHourCliDependencies {
     },
     extractH1: extractH1FamilyInput,
     // Production deliberately supplies no endpoint, economics, key, or signing overrides.
-    fetchSpotMetadata: () => fetchRelevantSpotMeta(),
-    fetchCandles: (symbol) => fetchFrozenFourHourCandles(symbol),
-    fetchFunding: (coin) => fetchFrozenHourlyFunding(coin),
+    // It does enable request pacing: a canonical snapshot is 151 requests against a
+    // 1200-weight-per-minute per-IP budget, and an unpaced run fails partway through.
+    fetchSpotMetadata: () => fetchRelevantSpotMeta(CANONICAL_FETCH_POLICY),
+    fetchCandles: (symbol) => fetchFrozenFourHourCandles(symbol, CANONICAL_FETCH_POLICY),
+    fetchFunding: (coin) => fetchFrozenHourlyFunding(coin, CANONICAL_FETCH_POLICY),
     buildSnapshot: buildStoredFamilySnapshot,
     writeSnapshot: writeFamilySnapshot,
     readSnapshot: readFamilySnapshot,
