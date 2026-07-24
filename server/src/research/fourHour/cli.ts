@@ -125,8 +125,13 @@ export const FOUR_HOUR_FAMILY_LIMITATIONS: readonly string[] = Object.freeze([
 const STRATEGY_IDS = Object.freeze(['H2', 'H3', 'H4'] as const);
 
 /**
- * Only canonical acquisition paces requests. Pacing changes timing, never a stored
- * byte or a raw-response hash, so it cannot influence any economic result.
+ * Only canonical acquisition paces requests.
+ *
+ * Pacing cannot influence any economic result: it changes neither a raw-response hash
+ * (only the successful body is hashed) nor dataSha256 (normalized data excludes fetch
+ * timestamps and page evidence). It does stretch acquisition to roughly five minutes,
+ * which shifts the wall-clock fetchedAt values that appear inside artifactSha256 -- but
+ * artifactSha256 was never reproducible across runs for exactly that reason.
  */
 const CANONICAL_FETCH_POLICY = Object.freeze({ pacingEnabled: true as const });
 
@@ -231,6 +236,14 @@ export function createGitSourceReader(repositoryRoot: string): EvaluatorSourceRe
   return {
     list: async (relativeDirectory) => {
       const raw = run(['ls-tree', '-r', '-z', '--full-tree', 'HEAD', '--', relativeDirectory]);
+      // `git ls-tree` exits 0 with empty output when the pathspec matches nothing, which
+      // would silently yield a bundle covering only the fixed files and seal a hash
+      // pinning none of the evaluator. The disk reader threw ENOENT here; preserve that
+      // fail-closed behaviour rather than reintroducing the bricking class this reader
+      // exists to prevent.
+      if (raw === '') {
+        throw new Error(`Evaluator source directory ${relativeDirectory} is absent from HEAD`);
+      }
       return raw
         .split('\0')
         .filter((line) => line !== '')

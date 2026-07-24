@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   calculateSourceBundleSha256,
@@ -121,5 +122,80 @@ describe('evaluator source bundle provenance', () => {
   test('the disk reader still works, so fixture-based tests keep functioning', async () => {
     const entries = await createDiskSourceReader(REPOSITORY_ROOT).list(SURFACE);
     expect(entries.length).toBeGreaterThanOrEqual(14);
+  });
+
+  /*
+   * The composition below is the exact wiring production uses. Testing the reader and
+   * the collector separately left the one path that produces the permanent evaluator
+   * pin unexercised end to end.
+   */
+  test('the production composition yields the full 18-file bundle with a stable hash', async () => {
+    const bundle = await collectEvaluatorSourceBundle(
+      REPOSITORY_ROOT,
+      createGitSourceReader(REPOSITORY_ROOT),
+    );
+    expect(bundle).toHaveLength(18);
+
+    const again = await collectEvaluatorSourceBundle(
+      REPOSITORY_ROOT,
+      createGitSourceReader(REPOSITORY_ROOT),
+    );
+    expect(calculateSourceBundleSha256(bundle)).toBe(calculateSourceBundleSha256(again));
+  });
+
+  /*
+   * Asserting flat equality here would be flaky: during development the worktree
+   * legitimately differs from HEAD. The invariant that actually holds at all times is
+   * that the ONLY files whose bytes differ between the two readers are files git itself
+   * reports as modified. On a clean worktree that set is empty and the hashes match,
+   * which is the property the canonical snapshot depends on.
+   */
+  test('git and disk bundles differ only where git reports a modification', async () => {
+    const status = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+      cwd: REPOSITORY_ROOT, encoding: 'utf8',
+    });
+    const dirty = new Set(
+      status.split('\n')
+        .map((line) => line.slice(3).trim())
+        .filter((p) => p !== ''),
+    );
+
+    const fromGit = await collectEvaluatorSourceBundle(
+      REPOSITORY_ROOT, createGitSourceReader(REPOSITORY_ROOT),
+    );
+    const fromDisk = await collectEvaluatorSourceBundle(
+      REPOSITORY_ROOT, createDiskSourceReader(REPOSITORY_ROOT),
+    );
+
+    const gitBytes = new Map(fromGit.map((f) => [f.relativePath, f.bytes]));
+    const divergent = fromDisk
+      .filter((f) => gitBytes.get(f.relativePath) !== f.bytes)
+      .map((f) => f.relativePath);
+
+    for (const p of divergent) expect(dirty.has(p)).toBe(true);
+
+    if (dirty.size === 0) {
+      expect(calculateSourceBundleSha256(fromGit)).toBe(calculateSourceBundleSha256(fromDisk));
+    }
+  });
+
+  /*
+   * `git ls-tree` exits 0 with empty output when a pathspec matches nothing. Without an
+   * explicit guard that silently produces a bundle covering only the four fixed files,
+   * pinning an evaluator it does not contain - the same bricking class the git reader
+   * exists to prevent, re-entered through a different door.
+   */
+  test('a missing evaluator surface fails closed instead of yielding an empty listing', async () => {
+    await expect(createGitSourceReader(REPOSITORY_ROOT).list(`${SURFACE}GONE`))
+      .rejects.toThrow(/absent from HEAD/u);
+  });
+
+  test('an empty listing is refused by the collector as well as the reader', async () => {
+    const reader: EvaluatorSourceReader = {
+      list: async () => [],
+      read: async () => '{}\n',
+    };
+    await expect(collectEvaluatorSourceBundle(REPOSITORY_ROOT, reader))
+      .rejects.toThrow(/pins no evaluator/u);
   });
 });

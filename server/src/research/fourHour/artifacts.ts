@@ -240,6 +240,11 @@ export async function collectEvaluatorSourceBundle(
     bytes: await reader.read(relativePath),
   })));
   const entries = await reader.list('server/src/research/fourHour');
+  // A reader that reports an empty evaluator surface must never produce a bundle. The
+  // fixed files alone would still hash successfully and pin nothing that actually runs.
+  if (entries.length === 0) {
+    throw new Error('Evaluator source surface is empty; refusing to hash a bundle that pins no evaluator');
+  }
   const recursive: SourceBundleFile[] = [];
   for (const entry of entries) {
     const relativePath = normalizeSourcePath(entry.relativePath);
