@@ -9,7 +9,7 @@
 
 A full-stack paper trading platform powered by real-time Hyperliquid and Binance market data. Trade 70+ crypto perpetual futures with $100k virtual USDC, track PnL with proper margin and liquidation math, and compete on a global leaderboard, all backed by Supabase with atomic database transactions and live WebSocket streaming.
 
-**[Trade Now &rarr; tradeterm.app](https://tradeterm.app/)**
+> **Status:** Source/reference system only. The former hosted demo is offline. Draft hardening [PR #11](https://github.com/claygeo/hyperliquid-trading-sim/pull/11) is CI-green but is not merged or deployed to production.
 
 ---
 
