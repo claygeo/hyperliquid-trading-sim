@@ -38,5 +38,5 @@ export interface UserStats {
   averageTrade: number;
   averageWin: number;
   averageLoss: number;
-  profitFactor: number;
+  profitFactor: number | 'infinite';
 }

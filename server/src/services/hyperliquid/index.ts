@@ -3,10 +3,9 @@ import { config } from '../../config/index.js';
 import { initializeAssets } from '../../config/assets.js';
 import { logger } from '../../lib/logger.js';
 import type { WebSocketServer } from '../../websocket/index.js';
-import type { BinanceKlineService } from '../binance/index.js';
 import type { Candle, Orderbook, OrderbookLevel, Trade } from '../../types/market.js';
-import type { HLCandle, HLOrderbook, HLTrade, HLAllMids } from '../../types/hyperliquid.js';
-import { v4 as uuidv4 } from 'uuid';
+import type { HLOrderbook, HLTrade, HLAllMids } from '../../types/hyperliquid.js';
+import { randomUUID } from 'node:crypto';
 
 // Timeframe to milliseconds
 const TIMEFRAME_MS: Record<string, number> = {
@@ -103,7 +102,7 @@ const CRYPTOCOMPARE_SYMBOLS: Record<string, string> = {
   HYPE: 'HYPE',
 };
 
-// Cache TTL for historical candles - shorter since we have live Binance updates
+// Cache TTL for historical candle snapshots.
 const CANDLE_CACHE_TTL: Record<string, number> = {
   '1m': 30 * 1000,      // 30 seconds
   '5m': 60 * 1000,      // 1 minute
@@ -122,34 +121,49 @@ interface CandleCache {
 // Track pending requests to prevent duplicate fetches
 const pendingCandleFetches = new Map<string, Promise<Candle[]>>();
 
+const DEFAULT_WARM_LEASE_MS = 15_000;
+
+// Hyperliquid permits 2,000 client messages per minute per IP across every
+// upstream WebSocket connection. Pace this process at 1,200/minute so control
+// traffic retains 40% headroom for reconnects and any future heartbeat traffic.
+export const UPSTREAM_CONTROL_MESSAGE_INTERVAL_MS = 50;
+
+type AssetFeedType = 'l2Book' | 'trades';
+type UpstreamSubscription =
+  | { type: 'allMids' }
+  | { type: AssetFeedType; coin: string };
+
 // Track if assets have been initialized (only do once per server lifetime)
 let assetsInitialized = false;
 
 export class HyperliquidService {
   private ws: WebSocket | null = null;
   private wss: WebSocketServer;
-  private binanceKline: BinanceKlineService | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private shouldReconnect = true;
   
   // Caches
   private prices: Map<string, number> = new Map();
+  private priceObservedAt: Map<string, number> = new Map();
   private orderbooks: Map<string, Orderbook> = new Map();
   private candleCache: Map<string, CandleCache> = new Map();
-  private subscribedAssets: Set<string> = new Set();
-  private subscriptionQueue: string[] = [];
-  private isProcessingQueue = false;
+  private assetLeaseCounts: Map<string, number> = new Map();
+  private desiredAssets: Set<string> = new Set();
+  private warmLeaseTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private activeControlSubscriptions: Set<string> = new Set();
+  private queuedControlSubscriptions: Set<string> = new Set();
+  private controlQueue: UpstreamSubscription[] = [];
+  private controlTimer: NodeJS.Timeout | null = null;
+  private lastControlMessageAt = 0;
   
-  // Track Binance kline subscriptions
-  private binanceKlineSubscriptions: Set<string> = new Set();
-
-  constructor(wss: WebSocketServer, binanceKline?: BinanceKlineService) {
+  constructor(wss: WebSocketServer) {
     this.wss = wss;
-    this.binanceKline = binanceKline || null;
   }
 
   async connect(): Promise<void> {
+    this.shouldReconnect = true;
     // Only initialize assets once per server lifetime
     if (!assetsInitialized) {
       try {
@@ -164,30 +178,59 @@ export class HyperliquidService {
     
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(config.hyperliquid.wsUrl);
+        const socket = new WebSocket(config.hyperliquid.wsUrl);
+        this.ws = socket;
+        let settled = false;
 
-        this.ws.on('open', () => {
+        socket.on('open', () => {
+          if (this.ws !== socket || !this.shouldReconnect) {
+            if (!settled) {
+              settled = true;
+              reject(new Error('Hyperliquid connection was superseded'));
+            }
+            socket.close();
+            return;
+          }
+
           logger.info('Hyperliquid WebSocket connected');
           this.reconnectAttempts = 0;
-          
-          // ONLY subscribe to allMids initially
-          // Individual asset subscriptions happen on-demand
+
+          // A new socket has no upstream subscriptions. Rebuild the desired
+          // state through the same paced control path used during steady state.
+          this.resetControlSocketState();
           this.subscribeToAllMids();
-          resolve();
+          this.restoreDesiredAssetSubscriptions();
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
         });
 
-        this.ws.on('message', (data) => {
+        socket.on('message', (data) => {
+          if (this.ws !== socket) return;
           this.handleMessage(data.toString());
         });
 
-        this.ws.on('close', () => {
+        socket.on('close', () => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Hyperliquid WebSocket closed before opening'));
+          }
+          if (this.ws !== socket) return;
+
           logger.warn('Hyperliquid WebSocket closed');
-          this.scheduleReconnect();
+          this.ws = null;
+          this.resetControlSocketState();
+          if (this.shouldReconnect) {
+            this.scheduleReconnect();
+          }
         });
 
-        this.ws.on('error', (error) => {
+        socket.on('error', (error) => {
+          if (this.ws !== socket) return;
           logger.error('Hyperliquid WebSocket error:', error);
-          if (this.reconnectAttempts === 0) {
+          if (!settled) {
+            settled = true;
             reject(error);
           }
         });
@@ -198,30 +241,43 @@ export class HyperliquidService {
   }
 
   disconnect() {
+    this.shouldReconnect = false;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
     }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    for (const timeout of this.warmLeaseTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.warmLeaseTimeouts.clear();
+    this.assetLeaseCounts.clear();
+    this.desiredAssets.clear();
+    this.resetControlSocketState();
+
+    const socket = this.ws;
+    this.ws = null;
+    if (socket) {
+      // Closing the socket atomically drops every upstream subscription. Do not
+      // bypass the paced control path by trying to flush unsubs during shutdown.
+      socket.close();
     }
   }
 
   // Subscribe only to allMids on startup - ONE subscription for ALL prices
   private subscribeToAllMids() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-
-    this.ws.send(JSON.stringify({
-      method: 'subscribe',
-      subscription: { type: 'allMids' },
-    }));
-
-    logger.info('Subscribed to allMids for price updates');
+    this.enqueueControlReconciliation({ type: 'allMids' });
   }
 
   // Get current price from cache
   getPrice(asset: string): number {
     return this.prices.get(asset) || 0;
+  }
+
+  getPriceSnapshot(asset: string): { price: number; observedAt: number } | null {
+    const price = this.prices.get(asset);
+    const observedAt = this.priceObservedAt.get(asset);
+    if (!price || !observedAt) return null;
+    return { price, observedAt };
   }
 
   // Get all prices
@@ -234,15 +290,12 @@ export class HyperliquidService {
     return this.orderbooks.get(asset);
   }
 
-  // Get candles - either from cache or fetch from REST API
-  // Also subscribes to Binance US klines for real-time updates
+  // Get bounded historical candle snapshots from cache or REST. A public HTTP
+  // request must never create a durable upstream WebSocket subscription.
   async getCandles(asset: string, timeframe: string, limit: number = 500): Promise<Candle[]> {
     const cacheKey = `${asset}-${timeframe}`;
     const cached = this.candleCache.get(cacheKey);
     const cacheTTL = CANDLE_CACHE_TTL[timeframe] || CANDLE_CACHE_TTL['1h'];
-    
-    // Subscribe to Binance US klines for real-time updates
-    this.subscribeToBinanceKlines(asset, timeframe);
     
     // Validate cached data - ensure it has the correct asset
     if (cached && Date.now() - cached.timestamp < cacheTTL && cached.candles.length > 0) {
@@ -256,13 +309,10 @@ export class HyperliquidService {
           logger.info(`Cache invalidated for ${asset}: price drift too large (${priceDiff.toFixed(2)})`);
           this.candleCache.delete(cacheKey);
         } else {
-          // Merge with any live Binance candles
-          const mergedCandles = this.mergeWithBinanceLive(cached.candles, asset, timeframe);
-          return mergedCandles.slice(-limit);
+          return cached.candles.slice(-limit);
         }
       } else {
-        const mergedCandles = this.mergeWithBinanceLive(cached.candles, asset, timeframe);
-        return mergedCandles.slice(-limit);
+        return cached.candles.slice(-limit);
       }
     }
 
@@ -301,14 +351,8 @@ export class HyperliquidService {
         timeframe,
       });
       
-      // Queue subscription for this asset (for live orderbook updates)
-      this.queueAssetSubscription(asset);
-      
       logger.info(`Cached ${candles.length} candles for ${asset} ${timeframe}`);
-      
-      // Merge with any live Binance candles before returning
-      const mergedCandles = this.mergeWithBinanceLive(candles, asset, timeframe);
-      return mergedCandles.slice(-limit);
+      return candles.slice(-limit);
     } catch (error) {
       logger.error(`Failed to fetch candles for ${asset} ${timeframe}:`, error);
       
@@ -317,83 +361,150 @@ export class HyperliquidService {
         return cached.candles.slice(-limit);
       }
       
-      // Generate fallback candles
-      return this.generateFallbackCandles(asset, timeframe, limit);
+      throw new Error(`Candle data unavailable for ${asset} ${timeframe}`, { cause: error });
     } finally {
-      setTimeout(() => pendingCandleFetches.delete(cacheKey), 1000);
+      pendingCandleFetches.delete(cacheKey);
     }
   }
 
-  // Subscribe to Binance US klines for real-time candle updates
-  private subscribeToBinanceKlines(asset: string, timeframe: string): void {
-    if (!this.binanceKline) return;
-    
-    const subscriptionKey = `${asset}-${timeframe}`;
-    if (this.binanceKlineSubscriptions.has(subscriptionKey)) return;
-    
-    if (this.binanceKline.isSupported(asset)) {
-      this.binanceKline.subscribeToKlines(asset, timeframe);
-      this.binanceKlineSubscriptions.add(subscriptionKey);
-      logger.info(`Subscribed to Binance US klines: ${asset} ${timeframe}`);
+  acquireAssetLease(asset: string): void {
+    const leaseCount = this.assetLeaseCounts.get(asset) ?? 0;
+    this.assetLeaseCounts.set(asset, leaseCount + 1);
+    if (leaseCount > 0) return;
+
+    this.desiredAssets.add(asset);
+    this.enqueueAssetReconciliation(asset);
+  }
+
+  releaseAssetLease(asset: string): void {
+    const leaseCount = this.assetLeaseCounts.get(asset) ?? 0;
+    if (leaseCount === 0) return;
+    if (leaseCount > 1) {
+      this.assetLeaseCounts.set(asset, leaseCount - 1);
+      return;
+    }
+
+    this.assetLeaseCounts.delete(asset);
+    this.desiredAssets.delete(asset);
+    this.enqueueAssetReconciliation(asset);
+  }
+
+  warmAsset(asset: string, durationMs: number = DEFAULT_WARM_LEASE_MS): void {
+    if (this.warmLeaseTimeouts.has(asset)) return;
+    this.acquireAssetLease(asset);
+
+    const timeout = setTimeout(() => {
+      this.warmLeaseTimeouts.delete(asset);
+      this.releaseAssetLease(asset);
+    }, Math.max(1, durationMs));
+    timeout.unref?.();
+    this.warmLeaseTimeouts.set(asset, timeout);
+  }
+
+  private restoreDesiredAssetSubscriptions(): void {
+    for (const asset of this.desiredAssets) {
+      this.enqueueAssetReconciliation(asset);
     }
   }
 
-  // Merge REST candles with live Binance updates
-  private mergeWithBinanceLive(restCandles: Candle[], asset: string, timeframe: string): Candle[] {
-    if (!this.binanceKline) return restCandles;
-    return this.binanceKline.mergeWithLiveCandles(restCandles, asset, timeframe);
+  private enqueueAssetReconciliation(asset: string): void {
+    this.enqueueControlReconciliation({ type: 'l2Book', coin: asset });
+    this.enqueueControlReconciliation({ type: 'trades', coin: asset });
   }
 
-  // Queue asset subscription to avoid overwhelming the WebSocket
-  private queueAssetSubscription(asset: string) {
-    if (this.subscribedAssets.has(asset)) return;
-    if (this.subscriptionQueue.includes(asset)) return;
-    
-    this.subscriptionQueue.push(asset);
-    this.processSubscriptionQueue();
+  private enqueueControlReconciliation(subscription: UpstreamSubscription): void {
+    const key = this.getControlSubscriptionKey(subscription);
+    if (this.queuedControlSubscriptions.has(key)) return;
+
+    this.controlQueue.push(subscription);
+    this.queuedControlSubscriptions.add(key);
+    this.scheduleControlPump();
   }
 
-  // Process subscription queue with delays
-  private async processSubscriptionQueue() {
-    if (this.isProcessingQueue) return;
-    if (this.subscriptionQueue.length === 0) return;
-    
-    this.isProcessingQueue = true;
-    
-    while (this.subscriptionQueue.length > 0) {
-      const asset = this.subscriptionQueue.shift()!;
-      
-      if (!this.subscribedAssets.has(asset)) {
-        this.subscribeToAssetImmediate(asset);
-        // Wait 1 second between subscriptions to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    this.isProcessingQueue = false;
-  }
-
-  // Public method to subscribe to an asset
-  subscribeToAsset(asset: string): void {
-    this.queueAssetSubscription(asset);
-    // Also subscribe to Binance klines for 1m timeframe
-    this.subscribeToBinanceKlines(asset, '1m');
-  }
-
-  // Immediate subscription (called from queue)
-  private subscribeToAssetImmediate(asset: string): void {
+  private scheduleControlPump(): void {
+    if (this.controlTimer || this.controlQueue.length === 0) return;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    if (this.subscribedAssets.has(asset)) return;
 
-    this.subscribedAssets.add(asset);
+    const elapsed = this.lastControlMessageAt === 0
+      ? UPSTREAM_CONTROL_MESSAGE_INTERVAL_MS
+      : Date.now() - this.lastControlMessageAt;
+    const delay = Math.max(0, UPSTREAM_CONTROL_MESSAGE_INTERVAL_MS - elapsed);
 
-    // Only subscribe to L2 orderbook (we get prices from allMids)
-    this.ws.send(JSON.stringify({
-      method: 'subscribe',
-      subscription: { type: 'l2Book', coin: asset },
-    }));
+    this.controlTimer = setTimeout(() => {
+      this.controlTimer = null;
+      this.processNextControlMessage();
+    }, delay);
+    this.controlTimer.unref?.();
+  }
 
-    logger.info(`Subscribed to ${asset} orderbook`);
+  private processNextControlMessage(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    while (this.controlQueue.length > 0) {
+      const subscription = this.controlQueue.shift()!;
+      const key = this.getControlSubscriptionKey(subscription);
+      this.queuedControlSubscriptions.delete(key);
+
+      const desired = this.isControlSubscriptionDesired(subscription);
+      const active = this.activeControlSubscriptions.has(key);
+      if (desired === active) continue;
+
+      const method = desired ? 'subscribe' : 'unsubscribe';
+      try {
+        this.sendControlMessage(method, subscription);
+        if (desired) {
+          this.activeControlSubscriptions.add(key);
+        } else {
+          this.activeControlSubscriptions.delete(key);
+        }
+        logger.debug(`Sent Hyperliquid ${method} for ${key}`);
+      } catch (error) {
+        // A failed attempt still consumes this process's pacing budget. Queue
+        // the target again only if the socket remains usable; a close rebuilds
+        // all desired state on the next connection.
+        logger.error(`Failed to send Hyperliquid ${method} for ${key}:`, error);
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.controlQueue.push(subscription);
+          this.queuedControlSubscriptions.add(key);
+        }
+      }
+
+      this.lastControlMessageAt = Date.now();
+      break;
+    }
+
+    this.scheduleControlPump();
+  }
+
+  private sendControlMessage(
+    method: 'subscribe' | 'unsubscribe',
+    subscription: UpstreamSubscription,
+  ): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Hyperliquid WebSocket is not open');
+    }
+    this.ws.send(JSON.stringify({ method, subscription }));
+  }
+
+  private isControlSubscriptionDesired(subscription: UpstreamSubscription): boolean {
+    if (subscription.type === 'allMids') return this.shouldReconnect;
+    return this.desiredAssets.has(subscription.coin);
+  }
+
+  private getControlSubscriptionKey(subscription: UpstreamSubscription): string {
+    return subscription.type === 'allMids'
+      ? 'allMids'
+      : `${subscription.type}:${subscription.coin}`;
+  }
+
+  private resetControlSocketState(): void {
+    if (this.controlTimer) {
+      clearTimeout(this.controlTimer);
+      this.controlTimer = null;
+    }
+    this.controlQueue = [];
+    this.queuedControlSubscriptions.clear();
+    this.activeControlSubscriptions.clear();
   }
 
   // Fetch candles from CryptoCompare API (no geo-restrictions, dedicated data API)
@@ -525,52 +636,6 @@ export class HyperliquidService {
     }
   }
 
-  // Generate fallback candles using REAL WebSocket price
-  private generateFallbackCandles(asset: string, timeframe: string, limit: number): Candle[] {
-    // Use real WebSocket price if available, otherwise estimate
-    const basePrice = this.prices.get(asset) || this.getEstimatedPrice(asset);
-    const candles: Candle[] = [];
-    const now = Date.now();
-    const intervalMs = TIMEFRAME_MS[timeframe] || TIMEFRAME_MS['1h'];
-
-    // Start from a price slightly below current to create realistic trend
-    let price = basePrice * (0.97 + Math.random() * 0.02);
-
-    for (let i = limit - 1; i >= 0; i--) {
-      const time = now - i * intervalMs;
-      // Smaller volatility for more realistic chart
-      const volatility = basePrice * 0.001;
-
-      const open = price;
-      // Slight upward bias to end near current price
-      const bias = (i < 10) ? 0.0001 : 0;
-      const change = (Math.random() - 0.48 + bias) * volatility;
-      const close = open + change;
-      const high = Math.max(open, close) + Math.random() * volatility * 0.3;
-      const low = Math.min(open, close) - Math.random() * volatility * 0.3;
-      const volume = Math.random() * 1000000 + 10000;
-
-      candles.push({ time, open, high, low, close, volume });
-      price = close;
-    }
-
-    logger.warn(`Generated fallback candles for ${asset} ${timeframe}`);
-    return candles;
-  }
-
-  private getEstimatedPrice(asset: string): number {
-    // Updated estimates closer to Feb 2026 market values
-    // These are used as fallback only when real data isn't available
-    const estimates: Record<string, number> = {
-      BTC: 78000, ETH: 2800, SOL: 180, DOGE: 0.25, AVAX: 28,
-      LINK: 18, ARB: 0.70, OP: 1.5, SUI: 3.5, PEPE: 0.000012,
-      WIF: 1.2, MATIC: 0.38, INJ: 18, APT: 7, NEAR: 4.5,
-      AAVE: 220, UNI: 10, MKR: 1400, SNX: 2.0, CRV: 0.6,
-      XRP: 1.65, ADA: 0.85, DOT: 6, ATOM: 8, FTM: 0.7,
-    };
-    return estimates[asset] || 100;
-  }
-
   private handleMessage(data: string) {
     try {
       const message = JSON.parse(data);
@@ -581,8 +646,6 @@ export class HyperliquidService {
         this.handleOrderbook(message.data);
       } else if (message.channel === 'trades') {
         this.handleTrades(message.data);
-      } else if (message.channel === 'candle') {
-        this.handleCandle(message.data);
       }
     } catch (error) {
       // Ignore parse errors for non-JSON messages
@@ -595,6 +658,7 @@ export class HyperliquidService {
       const priceNum = parseFloat(price as string);
       if (!isNaN(priceNum)) {
         this.prices.set(coin, priceNum);
+        this.priceObservedAt.set(coin, Date.now());
 
         // Broadcast price update
         this.wss.broadcast({
@@ -652,6 +716,7 @@ export class HyperliquidService {
     
     if (midPrice > 0) {
       this.prices.set(coin, midPrice);
+      this.priceObservedAt.set(coin, Date.now());
     }
 
     // Broadcast orderbook update
@@ -673,7 +738,7 @@ export class HyperliquidService {
       const { coin, side, px, sz, time, hash } = hlTrade;
 
       const trade: Trade = {
-        id: hash || uuidv4(),
+        id: hash || randomUUID(),
         price: parseFloat(px),
         size: parseFloat(sz),
         side: side === 'B' ? 'buy' : 'sell',
@@ -681,6 +746,7 @@ export class HyperliquidService {
       };
 
       this.prices.set(coin, trade.price);
+      this.priceObservedAt.set(coin, Date.now());
 
       this.wss.broadcast({
         type: 'trade',
@@ -688,46 +754,6 @@ export class HyperliquidService {
         data: trade,
       });
     }
-  }
-
-  private handleCandle(data: HLCandle) {
-    const { s: coin, t: time, o, h, l, c, v } = data;
-
-    const candle: Candle = {
-      time: time,
-      open: parseFloat(o),
-      high: parseFloat(h),
-      low: parseFloat(l),
-      close: parseFloat(c),
-      volume: parseFloat(v),
-    };
-
-    this.prices.set(coin, candle.close);
-
-    // Update candle cache
-    const cacheKey = `${coin}-1m`;
-    const cached = this.candleCache.get(cacheKey);
-    
-    if (cached) {
-      const existing = cached.candles;
-      const lastCandle = existing[existing.length - 1];
-      
-      if (lastCandle && lastCandle.time === candle.time) {
-        existing[existing.length - 1] = candle;
-      } else {
-        existing.push(candle);
-        if (existing.length > 500) {
-          existing.shift();
-        }
-      }
-      cached.timestamp = Date.now();
-    }
-
-    this.wss.broadcast({
-      type: 'candle',
-      channel: `candles:${coin}`,
-      data: candle,
-    });
   }
 
   private scheduleReconnect() {
@@ -743,9 +769,6 @@ export class HyperliquidService {
     logger.info(`Reconnecting to Hyperliquid in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     this.reconnectTimeout = setTimeout(() => {
-      // Clear subscribed assets so we can re-subscribe on demand
-      this.subscribedAssets.clear();
-      
       this.connect().catch((error) => {
         logger.error('Reconnect failed:', error);
       });

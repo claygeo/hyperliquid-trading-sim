@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { rateLimitMiddleware } from '../middleware/rateLimit.middleware';
 
@@ -159,6 +159,28 @@ describe('rateLimitMiddleware', () => {
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
           error: 'Too many requests',
         }));
+        expect(next).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it('does not trust caller-supplied X-Forwarded-For values', () => {
+    const ip = '10.0.0.100';
+
+    for (let i = 0; i < 101; i++) {
+      const req = mockReq({
+        ip,
+        headers: { 'x-forwarded-for': `203.0.113.${i}` },
+      });
+      const res = mockRes();
+      const next = jest.fn();
+
+      rateLimitMiddleware(req as Request, res, next);
+
+      if (i < 100) {
+        expect(next).toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(429);
         expect(next).not.toHaveBeenCalled();
       }
     }

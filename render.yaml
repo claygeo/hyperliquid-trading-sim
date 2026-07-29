@@ -4,15 +4,19 @@
 services:
   - type: web
     name: hyperliquid-trading-sim-api
-    env: node
+    runtime: node
     region: oregon
     plan: starter
     rootDir: server
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY_HOPS
+        value: "1"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY

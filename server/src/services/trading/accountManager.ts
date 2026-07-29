@@ -1,9 +1,29 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getSupabase } from '../../lib/supabase.js';
 import { TRADING_CONSTANTS } from '../../config/constants.js';
 import { PnlCalculator } from './pnlCalculator.js';
-import type { Account } from '../../types/trading.js';
+import { priceService } from '../price/index.js';
+import type { Account, OrderSide } from '../../types/trading.js';
 import type { UserStats } from '../../types/user.js';
+
+interface AccountSnapshotRow {
+  id: string;
+  user_id: string;
+  balance: number | string;
+  initial_balance: number | string;
+  reset_count: number | string;
+  created_at: string;
+}
+
+interface OpenPositionSnapshotRow {
+  id: string;
+  asset: string;
+  side: OrderSide;
+  entry_price: number | string;
+  current_price: number | string;
+  size: number | string;
+  margin: number | string;
+}
 
 export class AccountManager {
   private pnlCalculator: PnlCalculator;
@@ -15,43 +35,74 @@ export class AccountManager {
   async getAccount(userId: string): Promise<Account> {
     const supabase = getSupabase();
 
-    const { data: account, error } = await supabase
-      .from('accounts')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
+    const { data: snapshot, error } = await supabase.rpc('get_account_snapshot', {
+      p_user_id: userId,
+    });
 
-    // If account doesn't exist, create it
-    if (error || !account) {
+    if (error) {
+      throw new Error(`Failed to fetch account snapshot: ${error.message}`);
+    }
+
+    // Provisioning creates this row with the auth user. Retain a checked legacy
+    // fallback for accounts created before that trigger existed.
+    if (!snapshot?.account) {
       return this.createAccount(userId);
     }
 
-    // Get open positions to calculate unrealized PnL and used margin
-    const { data: positions } = await supabase
-      .from('positions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'open');
+    const account = snapshot.account as AccountSnapshotRow;
+    const positions = Array.isArray(snapshot.positions)
+      ? snapshot.positions as OpenPositionSnapshotRow[]
+      : [];
 
-    const unrealizedPnl = (positions || []).reduce(
-      (sum, p) => sum + (p.unrealized_pnl || 0),
-      0
-    );
-    const usedMargin = (positions || []).reduce((sum, p) => sum + p.margin, 0);
+    let unrealizedPnl = 0;
+    let usedMargin = 0;
+    let priceStale = false;
+    for (const position of positions) {
+      const entryPrice = Number(position.entry_price);
+      const size = Number(position.size);
+      const margin = Number(position.margin);
+      const livePrice = priceService.getCurrentPrice(position.asset);
+      if (livePrice === null) priceStale = true;
+      const currentPrice = livePrice ?? Number(position.current_price);
+
+      if (
+        !Number.isFinite(entryPrice)
+        || entryPrice <= 0
+        || !Number.isFinite(size)
+        || size <= 0
+        || !Number.isFinite(margin)
+        || margin <= 0
+        || !Number.isFinite(currentPrice)
+        || currentPrice <= 0
+        || !['long', 'short'].includes(position.side)
+      ) {
+        throw new Error(`Position ${position.id} contains invalid accounting values`);
+      }
+
+      const rawPnl = this.pnlCalculator.calculatePnl(
+        entryPrice,
+        currentPrice,
+        size,
+        position.side
+      );
+      unrealizedPnl += Math.max(rawPnl, -margin);
+      usedMargin += margin;
+    }
 
     // Note: balance already has margin deducted when positions are opened
     // So availableMargin = balance (not balance - usedMargin, which would double-count)
-    // Equity = balance (locked in positions) + unrealizedPnl
+    // Equity = available balance + locked margin + live unrealized PnL.
     return {
       id: account.id,
       userId: account.user_id,
-      balance: account.balance,
-      initialBalance: account.initial_balance,
-      equity: account.balance + usedMargin + unrealizedPnl,
+      balance: Number(account.balance),
+      initialBalance: Number(account.initial_balance),
+      equity: Number(account.balance) + usedMargin + unrealizedPnl,
       unrealizedPnl,
       usedMargin,
-      availableMargin: account.balance,
-      resetCount: account.reset_count || 0,
+      availableMargin: Number(account.balance),
+      priceStale,
+      resetCount: Number(account.reset_count) || 0,
       createdAt: account.created_at,
     };
   }
@@ -62,7 +113,7 @@ export class AccountManager {
     const { data: account, error } = await supabase
       .from('accounts')
       .insert({
-        id: uuidv4(),
+        id: randomUUID(),
         user_id: userId,
         balance: TRADING_CONSTANTS.INITIAL_BALANCE,
         initial_balance: TRADING_CONSTANTS.INITIAL_BALANCE,
@@ -84,6 +135,7 @@ export class AccountManager {
       unrealizedPnl: 0,
       usedMargin: 0,
       availableMargin: account.balance,
+      priceStale: false,
       resetCount: account.reset_count,
       createdAt: account.created_at,
     };
@@ -92,60 +144,67 @@ export class AccountManager {
   async resetAccount(userId: string): Promise<Account> {
     const supabase = getSupabase();
 
-    // Close all open positions
-    await supabase
-      .from('positions')
-      .update({
-        status: 'closed',
-        closed_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .eq('status', 'open');
+    const { data, error } = await supabase.rpc('reset_account_atomic', {
+      p_user_id: userId,
+    });
 
-    // Get current reset count
-    const { data: currentAccount } = await supabase
-      .from('accounts')
-      .select('reset_count')
-      .eq('user_id', userId)
-      .single();
+    if (error || !data) {
+      throw new Error(
+        `Failed to reset account: ${error?.message || 'database returned no account'}`
+      );
+    }
 
-    // Reset account balance and increment reset count atomically
-    await supabase
-      .from('accounts')
-      .update({
-        balance: TRADING_CONSTANTS.INITIAL_BALANCE,
-        initial_balance: TRADING_CONSTANTS.INITIAL_BALANCE,
-        reset_count: (currentAccount?.reset_count || 0) + 1,
-      })
-      .eq('user_id', userId);
+    // The reset RPC returns the row committed by the same transaction that
+    // cleared positions, history, and leaderboard state. Do not perform a
+    // second snapshot read here: if that follow-up failed, the API would report
+    // failure after a destructive reset had already committed and invite an
+    // unnecessary second generation increment on retry.
+    const account = data as AccountSnapshotRow;
+    const balance = Number(account.balance);
+    const initialBalance = Number(account.initial_balance);
+    const resetCount = Number(account.reset_count);
 
-    // Clear trade history
-    await supabase.from('trades').delete().eq('user_id', userId);
+    if (
+      !account.id
+      || account.user_id !== userId
+      || !Number.isFinite(balance)
+      || balance < 0
+      || !Number.isFinite(initialBalance)
+      || initialBalance <= 0
+      || !Number.isSafeInteger(resetCount)
+      || resetCount < 0
+      || !account.created_at
+    ) {
+      throw new Error('Failed to reset account: database returned an invalid account');
+    }
 
-    // Reset leaderboard stats
-    await supabase
-      .from('leaderboard_stats')
-      .update({
-        total_pnl: 0,
-        total_pnl_percent: 0,
-        win_rate: 0,
-        max_drawdown: 0,
-        trade_count: 0,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId);
-
-    return this.getAccount(userId);
+    return {
+      id: account.id,
+      userId: account.user_id,
+      balance,
+      initialBalance,
+      equity: balance,
+      unrealizedPnl: 0,
+      usedMargin: 0,
+      availableMargin: balance,
+      priceStale: false,
+      resetCount,
+      createdAt: account.created_at,
+    };
   }
 
   async getUserStats(userId: string): Promise<UserStats> {
     const supabase = getSupabase();
 
-    const { data: trades } = await supabase
+    const { data: trades, error: tradesError } = await supabase
       .from('trades')
       .select('*')
       .eq('user_id', userId)
       .order('closed_at', { ascending: true });
+
+    if (tradesError) {
+      throw new Error(`Failed to fetch user stats: ${tradesError.message}`);
+    }
 
     if (!trades || trades.length === 0) {
       return {

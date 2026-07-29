@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from '@/lib/router';
 import { useAuthStore } from '../../hooks/useAuth';
 import { useAccountStore } from '../../hooks/useAccount';
 import { Button } from '../ui/Button';

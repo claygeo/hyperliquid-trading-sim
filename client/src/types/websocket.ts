@@ -1,7 +1,6 @@
 export type WSMessageType =
   | 'subscribe'
   | 'unsubscribe'
-  | 'candle'
   | 'orderbook'
   | 'trade'
   | 'position'
@@ -23,19 +22,6 @@ export interface WSMessage<T = unknown> {
 export interface WSSubscription {
   channel: string;
   asset?: string;
-}
-
-export interface WSCandle {
-  type: 'candle';
-  channel: string;
-  data: {
-    time: number;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
-  };
 }
 
 export interface WSOrderbook {

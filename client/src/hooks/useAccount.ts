@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { api } from '../lib/api';
+import { api, isAuthSessionChangedError } from '../lib/api';
+import { usePositionsStore } from './usePositions';
 import type { Account } from '../types/trading';
 import type { UserStats } from '../types/user';
 
@@ -15,7 +16,10 @@ interface AccountState {
   fetchStats: () => Promise<void>;
   resetAccount: () => Promise<void>;
   updateBalance: (balance: number) => void;
+  clear: () => void;
 }
+
+let accountGeneration = 0;
 
 export const useAccountStore = create<AccountState>((set, get) => ({
   account: null,
@@ -25,12 +29,16 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   error: null,
 
   fetchAccount: async () => {
+    const generation = accountGeneration;
     set({ isLoading: true, error: null });
     try {
       const account = await api.getAccount();
+      if (generation !== accountGeneration) return;
       set({ account, isLoading: false });
     } catch (error) {
+      if (isAuthSessionChangedError(error) || generation !== accountGeneration) return;
       set({
+        account: null,
         error: error instanceof Error ? error.message : 'Failed to fetch account',
         isLoading: false,
       });
@@ -38,18 +46,28 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
 
   fetchStats: async () => {
+    const generation = accountGeneration;
     try {
       const stats = await api.getUserStats();
+      if (generation !== accountGeneration) return;
       set({ stats });
     } catch (error) {
+      if (isAuthSessionChangedError(error) || generation !== accountGeneration) return;
       console.error('Failed to fetch stats:', error);
+      set({ stats: null });
     }
   },
 
   resetAccount: async () => {
+    const generation = ++accountGeneration;
     set({ isResetting: true, error: null });
     try {
       const account = await api.resetAccount();
+      if (generation !== accountGeneration) return;
+      // A reset closes the account's positions server-side and starts a new
+      // trading generation. Drop both visible positions and any retained
+      // idempotency keys from the previous generation before new orders resume.
+      usePositionsStore.getState().clear();
       set({ 
         account, 
         isResetting: false,
@@ -70,6 +88,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         }
       });
     } catch (error) {
+      if (isAuthSessionChangedError(error)) throw error;
+      if (generation !== accountGeneration) return;
       set({
         error: error instanceof Error ? error.message : 'Failed to reset account',
         isResetting: false,
@@ -83,6 +103,17 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     if (account) {
       set({ account: { ...account, balance } });
     }
+  },
+
+  clear: () => {
+    accountGeneration += 1;
+    set({
+      account: null,
+      stats: null,
+      isLoading: false,
+      isResetting: false,
+      error: null,
+    });
   },
 }));
 

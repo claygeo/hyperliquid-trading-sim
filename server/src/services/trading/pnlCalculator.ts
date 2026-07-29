@@ -1,4 +1,8 @@
-import { TRADING_CONSTANTS, SLIPPAGE_BPS_PER_10K } from '../../config/constants.js';
+import {
+  TRADING_CONSTANTS,
+  SLIPPAGE_BPS_PER_10K,
+  MAX_SLIPPAGE_BPS,
+} from '../../config/constants.js';
 import type { OrderSide } from '../../types/trading.js';
 
 export class PnlCalculator {
@@ -60,23 +64,34 @@ export class PnlCalculator {
     return currentPrice >= liquidationPrice;
   }
 
-  calculateMaxDrawdown(pnlHistory: number[]): number {
-    if (pnlHistory.length === 0) return 0;
+  calculateMaxDrawdown(
+    cumulativePnlHistory: number[],
+    initialBalance: number = TRADING_CONSTANTS.INITIAL_BALANCE
+  ): number {
+    if (cumulativePnlHistory.length === 0) return 0;
+    if (!Number.isFinite(initialBalance) || initialBalance <= 0) {
+      throw new Error('Initial balance must be a positive finite number');
+    }
 
-    let peak = pnlHistory[0];
+    let peakEquity = initialBalance;
     let maxDrawdown = 0;
 
-    for (const pnl of pnlHistory) {
-      if (pnl > peak) {
-        peak = pnl;
+    for (const cumulativePnl of cumulativePnlHistory) {
+      if (!Number.isFinite(cumulativePnl)) {
+        throw new Error('PnL history must contain only finite numbers');
       }
-      const drawdown = peak - pnl;
+
+      const equity = Math.max(0, initialBalance + cumulativePnl);
+      if (equity > peakEquity) {
+        peakEquity = equity;
+      }
+      const drawdown = ((peakEquity - equity) / peakEquity) * 100;
       if (drawdown > maxDrawdown) {
         maxDrawdown = drawdown;
       }
     }
 
-    return peak > 0 ? (maxDrawdown / peak) * 100 : 0;
+    return maxDrawdown;
   }
 
   calculateWinRate(trades: Array<{ pnl: number }>): number {
@@ -85,14 +100,14 @@ export class PnlCalculator {
     return (wins / trades.length) * 100;
   }
 
-  calculateProfitFactor(trades: Array<{ pnl: number }>): number {
+  calculateProfitFactor(trades: Array<{ pnl: number }>): number | 'infinite' {
     const grossProfit = trades
       .filter((t) => t.pnl > 0)
       .reduce((sum, t) => sum + t.pnl, 0);
     const grossLoss = Math.abs(
       trades.filter((t) => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)
     );
-    return grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
+    return grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 'infinite' : 0;
   }
 
   calculateFee(notional: number, feeRate: number): number {
@@ -102,7 +117,10 @@ export class PnlCalculator {
   // Simplified linear slippage: 0.05% per $10k notional.
   // Direction: buys slip up, sells slip down.
   applySlippage(price: number, notional: number, side: OrderSide): number {
-    const slippageBps = (notional / 10_000) * SLIPPAGE_BPS_PER_10K;
+    const slippageBps = Math.min(
+      (notional / 10_000) * SLIPPAGE_BPS_PER_10K,
+      MAX_SLIPPAGE_BPS
+    );
     const slippageFraction = slippageBps / 10_000;
     if (side === 'long') {
       return price * (1 + slippageFraction);

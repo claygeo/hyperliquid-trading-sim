@@ -35,6 +35,11 @@ export function RegisterForm({ onSubmit, isLoading, error, onErrorClear }: Regis
       return;
     }
 
+    if (username.length > 20) {
+      setValidationError('Username must be 20 characters or fewer');
+      return;
+    }
+
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
       setValidationError('Username can only contain letters, numbers, and underscores');
       return;

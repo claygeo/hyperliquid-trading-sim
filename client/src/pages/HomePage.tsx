@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from '@/lib/router';
 import { useAuthStore } from '../hooks/useAuth';
 import { Button } from '../components/ui/Button';
 

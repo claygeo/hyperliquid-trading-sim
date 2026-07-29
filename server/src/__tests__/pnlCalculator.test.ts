@@ -177,15 +177,20 @@ describe('PnlCalculator', () => {
     });
 
     it('calculates drawdown for simple peak-to-trough', () => {
-      // Peak at 1000, drops to 600 = 40% drawdown
+      // Equity peaks at 101,000 and falls to 100,600.
       const dd = calc.calculateMaxDrawdown([500, 1000, 600]);
-      expect(dd).toBe(40);
+      expect(dd).toBeCloseTo((400 / 101000) * 100, 8);
     });
 
-    it('finds the largest drawdown in multiple drops', () => {
-      // First drop: 100 -> 80 = 20%, Second drop: 120 -> 60 = 50%
-      const dd = calc.calculateMaxDrawdown([100, 80, 120, 60]);
+    it('counts an early loss from starting equity', () => {
+      const dd = calc.calculateMaxDrawdown([-50000, 60000]);
       expect(dd).toBe(50);
+    });
+
+    it('uses the peak that existed before each trough', () => {
+      // 120k -> 110k is 8.33%; 200k -> 140k is 30%.
+      const dd = calc.calculateMaxDrawdown([20000, 10000, 100000, 40000]);
+      expect(dd).toBe(30);
     });
 
     it('returns 0 when PnL is flat', () => {
@@ -222,8 +227,8 @@ describe('PnlCalculator', () => {
       expect(calc.calculateProfitFactor([])).toBe(0);
     });
 
-    it('returns Infinity when no losses exist', () => {
-      expect(calc.calculateProfitFactor([{ pnl: 100 }, { pnl: 200 }])).toBe(Infinity);
+    it('returns an explicit infinite value when no losses exist', () => {
+      expect(calc.calculateProfitFactor([{ pnl: 100 }, { pnl: 200 }])).toBe('infinite');
     });
 
     it('returns 0 when only losses exist', () => {
@@ -285,6 +290,11 @@ describe('PnlCalculator', () => {
 
     it('returns unchanged price for zero notional', () => {
       expect(calc.applySlippage(50000, 0, 'long')).toBe(50000);
+    });
+
+    it('caps simulated market impact at one percent', () => {
+      expect(calc.applySlippage(50000, 5_000_000, 'long')).toBe(50500);
+      expect(calc.applySlippage(50000, 5_000_000, 'short')).toBe(49500);
     });
   });
 });

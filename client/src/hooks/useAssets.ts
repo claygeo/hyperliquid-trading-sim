@@ -54,7 +54,8 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
 
   getAsset: (symbol) => {
     const { assets } = get();
-    return assets.find(a => a.symbol === symbol.toUpperCase());
+    const normalizedSymbol = symbol.toLocaleLowerCase('en-US');
+    return assets.find(a => a.symbol.toLocaleLowerCase('en-US') === normalizedSymbol);
   },
 }));
 

@@ -1,520 +1,252 @@
 # Hyperliquid Trading Simulator
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)](https://expressjs.com/)
-[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![CI](https://github.com/claygeo/hyperliquid-trading-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/claygeo/hyperliquid-trading-sim/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-A full-stack paper trading platform powered by real-time Hyperliquid and Binance market data. Trade 70+ crypto perpetual futures with $100k virtual USDC, track PnL with proper margin and liquidation math, and compete on a global leaderboard, all backed by Supabase with atomic database transactions and live WebSocket streaming.
+A full-stack paper-trading simulator built to exercise backend boundaries: authenticated commands, account-first PostgreSQL transactions, live public market feeds, fail-closed price checks, and a browser that never receives database service credentials.
 
-**[Trade Now &rarr; tradeterm.app](https://tradeterm.app/)**
+> **Deployment status:** the public demo is intentionally unlisted. The application code and migration chain are verified locally, but the former Supabase environment is unavailable. A new deployment is blocked on database recovery, full migration replay, a legacy-data audit that includes account reset generations, and end-to-end QA against the recovered environment.
 
----
+## What is verified
 
-## Screenshots
+- Active Hyperliquid perpetual markets are discovered from metadata, with a smaller curated fallback if metadata is unavailable.
+- Live prices use one Hyperliquid `allMids` subscription; L2 orderbooks and public trades use reference-counted on-demand leases. A desired-state reconciler releases abandoned feeds and paces every upstream subscribe/unsubscribe message at 50 ms, or at most 1,200 control messages per minute.
+- Historical charts use six REST candle timeframes with bounded caching, CryptoCompare as the primary source, and Hyperliquid `candleSnapshot` as fallback.
+- Candle HTTP requests have no durable upstream WebSocket side effects. Live market price is overlaid on the latest displayed bar in the client.
+- The simulator accepts market orders only, with integer leverage from 1–50×, a $5 million post-slippage execution-notional ceiling, bounded slippage, taker fees, and isolated-margin loss capping.
+- Order placement, manual position close, account reset, account snapshots, and leaderboard updates run through server-only PostgreSQL functions with a consistent account-first lock order.
+- Every market order carries the account-reset generation observed by the caller. PostgreSQL validates that generation under the account lock before any mutation, while a caller-supplied, user-scoped UUID idempotency key is retained in a private command ledger. A stale-generation command, materially different replay, or key from an earlier generation is rejected without another debit.
+- Execution fails closed when the latest price is missing or older than 15 seconds. Stale orderbooks and price endpoints return `503` rather than fabricating data.
+- Account reset clears positions, trade history, and ranking state in one database transaction.
+- Browser roles can read their RLS-protected data but cannot directly mutate balances, positions, trades, or leaderboard statistics.
+- A best-effort append-only activity stream supports user-scoped replay queries. It is intentionally not described as a transactional audit log.
 
-**Trading View**
-<img width="1280" alt="Trading view with live BTC chart, orderbook, and order form" src="docs/screenshots/trading.png" />
+## System boundary
 
-**Leaderboard**
-<img width="1280" alt="Global leaderboard ranked by PnL, win rate, and trade count" src="docs/screenshots/leaderboard.png" />
+```text
+React client
+  ├─ Supabase Auth: sign-up, sign-in, session refresh
+  ├─ HTTPS + bearer token ───────────────┐
+  └─ public WebSocket subscriptions ───┐ │
+                                      │ │
+Express + ws server                   │ │
+  ├─ validates auth, input, freshness │ │
+  ├─ publishes price/L2/trade data ───┘ │
+  └─ calls privileged DB functions ◄────┘
+                 │
+                 ▼
+Supabase PostgreSQL
+  ├─ account-first row locks
+  ├─ atomic order/close/reset functions
+  ├─ transaction-consistent account snapshots
+  ├─ caller-bound reset fence + durable order-command ledger
+  ├─ RLS and role privilege boundaries
+  └─ transactional leaderboard statistics
 
-**Login**
-<img width="1280" alt="Login page" src="docs/screenshots/login.png" />
-
-**Register**
-<img width="1280" alt="Registration page with $100k starting balance" src="docs/screenshots/register.png" />
-
----
-
-## Table of Contents
-
-- [Screenshots](#screenshots)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Setup](#setup)
-- [Environment Configuration](#environment-configuration)
-- [Database Setup](#database-setup)
-- [Trading Engine](#trading-engine)
-- [Market Data Pipeline](#market-data-pipeline)
-- [WebSocket Protocol](#websocket-protocol)
-- [API Reference](#api-reference)
-- [Stress Testing](#stress-testing)
-- [Development](#development)
-- [Testing](#testing)
-- [Quality](#quality)
-- [Security](#security)
-- [Deployment](#deployment)
-- [Project Structure](#project-structure)
-
-## Features
-
-- **Real-Time Market Data**: Live prices via Hyperliquid `allMids` WebSocket, L2 orderbook depth (15 levels), and trade feeds for 70+ assets
-- **Dual Candle Sources**: Historical candles from CryptoCompare REST API with real-time 1m candle streaming from Binance US WebSocket, merged seamlessly with cache invalidation and fallback generation
-- **Paper Trading Engine**: Market orders with configurable leverage (1–50×), proper margin accounting, PnL calculation, and automatic liquidation detection
-- **Atomic Transactions**: All order execution and position closing runs through PostgreSQL stored procedures (`execute_market_order`, `close_position_atomic`) with row-level locking to prevent race conditions
-- **TradingView Charts**: Lightweight Charts integration with 6 timeframes (1m, 5m, 15m, 1h, 4h, 1d), crosshair tooltips, and live candle updates
-- **Live Orderbook**: 15-level bid/ask depth with spread calculation, streamed directly from Hyperliquid L2 data
-- **Whale Tracking**: Follow positions of known Hyperliquid whale addresses with labeled identities
-- **Leaderboard**: Global rankings by PnL %, win rate, and trade count with user rank calculation via PostgreSQL window functions
-- **Account Management**: $100k starting balance, account reset with trade history wipe, and persistent stats tracking
-- **Stress Testing**: Built-in TPS simulator (10–1,000 TPS) that generates synthetic trades to demonstrate WebSocket throughput
-- **Supabase Auth**: JWT-based authentication with Bearer token middleware, Row Level Security policies on all tables, and optional WebSocket token validation
-- **Rate Limiting**: In-memory IP-based rate limiter (100 req/min) with `X-RateLimit-*` response headers
-- **CI/CD Pipeline**: GitHub Actions workflow with lint, typecheck, test, and build stages
-- **Docker Support**: Multi-stage Dockerfile with non-root user, healthcheck, and optimized layer caching
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18 + TypeScript + Vite |
-| Styling | Tailwind CSS |
-| Charts | TradingView Lightweight Charts |
-| State | Zustand |
-| Routing | React Router v6 |
-| Backend | Node.js + Express + TypeScript |
-| WebSocket | ws (server) + native WebSocket (client) |
-| Database | Supabase (PostgreSQL) with RLS |
-| Auth | Supabase Auth (JWT) |
-| Validation | Zod |
-| Security | Helmet + CORS + rate limiting |
-| Market Data | Hyperliquid WebSocket + CryptoCompare REST + Binance US WebSocket |
-| Testing | Jest + ts-jest |
-| CI/CD | GitHub Actions |
-| Deployment | Netlify (client) + Render (server) + Docker |
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                          Client (React)                          │
-│  TradingView Charts · Orderbook · Order Form · Leaderboard      │
-│  WebSocket Client · Zustand Store · Supabase Auth                │
-└──────────────┬──────────────────────────────────┬────────────────┘
-               │ REST (Express)                   │ WebSocket (ws)
-┌──────────────▼──────────────────────────────────▼────────────────┐
-│                          Server (Node.js)                        │
-│  Auth Middleware · Rate Limiter · Zod Validation · Error Handler │
-│                                                                  │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
-│  │  Trading Engine  │  │  Market Service   │  │  Stress Test   │  │
-│  │  OrderExecutor   │  │  HyperliquidSvc   │  │  TPS Generator │  │
-│  │  PositionManager │  │  BinanceKlineSvc  │  │  Stats Tracker │  │
-│  │  PnlCalculator   │  │  Candle Cache     │  │                │  │
-│  │  AccountManager  │  │  Orderbook Cache  │  │                │  │
-│  └────────┬────────┘  └────────┬─────────┘  └────────────────┘  │
-│           │                    │                                  │
-└───────────┼────────────────────┼─────────────────────────────────┘
-            │                    │
-┌───────────▼──────┐  ┌─────────▼──────────────────────────────────┐
-│    Supabase       │  │            External APIs                   │
-│  PostgreSQL + RLS │  │  Hyperliquid WS (allMids, l2Book, trades) │
-│  Auth (JWT)       │  │  CryptoCompare REST (historical candles)  │
-│  Stored Procs     │  │  Binance US WS (real-time klines)         │
-└──────────────────┘  └────────────────────────────────────────────┘
+External market data
+  ├─ Hyperliquid WebSocket: allMids, L2, public trades
+  ├─ CryptoCompare REST: historical candles
+  └─ Hyperliquid REST: candle fallback and market metadata
 ```
 
-## Prerequisites
+The client talks directly to Supabase for authentication and its own RLS-protected profile read. Trading mutations cross the Express authorization boundary and execute with server-held credentials; no private account or position data is sent through the public WebSocket.
 
-- **Node.js 18+** and npm
-- **Supabase account** with a project created
-- **Git** for cloning the repository
+## Trading and accounting model
 
-## Setup
+This is a paper-trading model, not an exchange-matching engine.
 
-### 1. Clone and Install
+1. The server validates the asset, finite numeric input, leverage, notional, signal metadata, and price freshness.
+2. The database locks the user's account before reading or changing balance-bearing state.
+3. Entry price includes a simplified deterministic slippage model capped at 1%.
+4. Opening margin is debited once inside the order transaction.
+5. A manual close returns isolated margin, applies the entry and exit fee components once to realized PnL, records one trade, and updates all-time leaderboard statistics in the same transaction.
+6. Loss cannot exceed isolated margin. A manual close that exhausts margin is recorded as liquidated.
+
+There is **no automatic liquidation worker**, limit-order book, partial-close flow, funding model, or real-money execution path. Liquidation price is displayed as a risk threshold; positions are closed through the authenticated market-close path.
+
+## Security and integrity controls
+
+- Supabase access tokens are validated on authenticated REST routes.
+- `anon` and `authenticated` cannot execute privileged trading functions or write balance-bearing tables directly.
+- Authenticated users may update only their own profile avatar; username and ownership fields remain server-controlled.
+- Signup provisioning creates profile, account, and leaderboard rows from canonical auth identity in one transaction.
+- Legacy user repair accepts a requested username only when it matches the canonical local login identity; otherwise it generates a stable non-identifying fallback.
+- Database checks reject non-finite values, invalid leverage, oversized notional, and inconsistent stored margin or liquidation math.
+- Position-close code revalidates legacy accounting state before crediting funds, preventing a forged historical margin value from minting balance.
+- HTTP requests use an IP-keyed in-memory rate limit behind an explicit trusted-proxy boundary.
+- WebSockets limit payload size, subscriptions, buffered output, per-IP connections, and total connections; asset-feed leases converge through the paced upstream reconciler on unsubscribe, disconnect, timeout, reconnect, and shutdown.
+- Development stress routes are not mounted when `NODE_ENV=production`.
+
+## Market-data behavior
+
+| Surface | Source | Failure behavior |
+|---|---|---|
+| Prices | Hyperliquid `allMids`, L2, and public trades | Missing/stale executable price returns `503` |
+| Orderbook | Hyperliquid L2, 15 displayed levels | Missing/stale book returns `503` and takes only a time-bounded upstream warm lease |
+| Recent trades | Hyperliquid public trades | Empty until an upstream trade is observed |
+| Historical candles | CryptoCompare REST | Falls back to Hyperliquid REST, then a stale local snapshot if one exists |
+| Market list | Hyperliquid metadata | Falls back to a curated list without claiming delisted markets are active |
+
+The candle cache is isolated by asset and timeframe. A historical-candle request never creates a persistent upstream socket. Upstream WebSocket control traffic is serialized through one desired-state reconciler and capped at 1,200 messages per minute, leaving headroom below Hyperliquid's per-IP limit.
+
+## Local development
+
+### Prerequisites
+
+- Node.js `>=22.13.0 <23`
+- npm
+- Supabase CLI and Docker for the local database stack
+
+### Install
 
 ```bash
 git clone https://github.com/claygeo/hyperliquid-trading-sim.git
 cd hyperliquid-trading-sim
-
-# Install all dependencies (root, client, server)
 npm run install:all
 ```
 
-### 2. Configure Environment Variables
+Create `client/.env` from `client/.env.example` and `server/.env` from `server/.env.example`.
 
-```bash
-cp client/.env.example client/.env
-cp server/.env.example server/.env
-```
+Client variables:
 
-Edit both files with your Supabase credentials (see [Environment Configuration](#environment-configuration)).
-
-### 3. Run Database Migrations
-
-Apply the SQL migrations in `supabase/migrations/` to your Supabase project, either through the Supabase dashboard SQL editor or the CLI:
-
-```bash
-npx supabase db push
-```
-
-### 4. Start Development
-
-```bash
-# Both client and server concurrently
-npm run dev
-
-# Or separately:
-npm run dev:client   # http://localhost:5173
-npm run dev:server   # http://localhost:3001
-```
-
-## Environment Configuration
-
-### Client (`client/.env`)
-
-```env
+```dotenv
 VITE_API_URL=http://localhost:3001
-VITE_WS_URL=ws://localhost:3001
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_WS_URL=ws://localhost:3001/ws
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=<local anon key>
+VITE_ENABLE_SYNTHETIC_EMAIL_SIGNUP=true
 ```
 
-### Server (`server/.env`)
+HyperSim maps usernames to synthetic `@hypersim.local` identifiers. Local Supabase is configured with email confirmation disabled, so username signup can create an immediate session. Hosted Supabase projects enable Confirm Email by default; those synthetic addresses cannot receive mail. Keep `VITE_ENABLE_SYNTHETIC_EMAIL_SIGNUP=false` in hosted builds until Confirm Email has been disabled in the Email provider and an authenticated signup has passed end-to-end QA.
 
-```env
+Server variables:
+
+```dotenv
 PORT=3001
 NODE_ENV=development
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=your-service-role-key
+TRUST_PROXY_HOPS=0
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_KEY=<local service-role key>
+HYPERLIQUID_API_URL=https://api.hyperliquid.xyz
+HYPERLIQUID_WS_URL=wss://api.hyperliquid.xyz/ws
 ```
 
-## Database Setup
+`SUPABASE_SERVICE_KEY` belongs on the server only. Never expose it through a `VITE_` variable or commit it.
 
-The application uses 5 tables and 3 atomic stored procedures. Migrations are in `supabase/migrations/` and should be run in order:
+### Database and app
 
-### Tables
+```bash
+supabase start
+supabase db reset
+npm run dev
+```
 
-| Table | Purpose | RLS |
-|-------|---------|-----|
-| `profiles` | Username, avatar | Users can view all, update own |
-| `accounts` | Balance, reset count | Users can view/update own |
-| `positions` | Open/closed trades with margin, PnL, liquidation price | Users can view/insert/update own |
-| `trades` | Closed position history (entry, exit, PnL) | Users can view/insert own |
-| `leaderboard_stats` | Aggregated PnL, win rate, drawdown | Anyone can view, users update own |
+The client starts on `http://localhost:5173`; the API and WebSocket server start on `http://localhost:3001`.
 
-### Stored Procedures
+An optional read-only position-tracker bridge can be enabled with `TRACKER_SUPABASE_URL` and `TRACKER_SUPABASE_KEY` on the server. The suggestions endpoints return `enabled: false` when it is not configured.
 
-| Function | Purpose |
-|----------|---------|
-| `execute_market_order` | Locks account row, checks balance, deducts margin, creates position, all atomically |
-| `close_position_atomic` | Locks position, updates status, returns margin + PnL to balance, records trade |
-| `liquidate_position_atomic` | Closes position with liquidation status, zeroes margin |
+## REST API
 
-All procedures use `FOR UPDATE` row locking and `SECURITY DEFINER` to prevent concurrent modification.
+All routes are covered by the process-local HTTP limiter. `Auth` means `Authorization: Bearer <supabase-access-token>` is required.
 
-## Trading Engine
+| Method | Route | Auth | Purpose |
+|---|---|---:|---|
+| `GET` | `/health` | No | Process health |
+| `GET` | `/api/market/assets` | No | Active/fallback market metadata |
+| `GET` | `/api/market/candles` | No | Historical candle snapshot by asset, timeframe, and limit |
+| `GET` | `/api/market/price` | No | Fresh cached market price |
+| `GET` | `/api/market/orderbook` | No | Fresh cached L2 book |
+| `GET` | `/api/leaderboard` | No | Paginated all-time ranking by total PnL percentage |
+| `POST` | `/api/trading/order` | Yes | Open a market position; requires a UUID `Idempotency-Key` header and the caller's observed `expectedAccountResetCount` |
+| `GET` | `/api/trading/positions` | Yes | Open positions with capped unrealized loss and a stale-price flag |
+| `POST` | `/api/trading/close/:id` | Yes | Manually close one owned position |
+| `GET` | `/api/trading/history` | Yes | Paginated trade history |
+| `GET` | `/api/account` | Yes | Authoritative balance, equity, margin, and PnL |
+| `GET` | `/api/account/stats` | Yes | User trading statistics |
+| `POST` | `/api/account/reset` | Yes | Reset account and dependent trading state atomically |
+| `GET` | `/api/replay` | Yes | User-scoped best-effort activity events |
+| `GET` | `/api/suggestions` | No | Optional external tracker suggestions |
+| `GET` | `/api/suggestions/stats` | No | Optional tracker statistics |
 
-### Order Execution Flow
+Retry an ambiguous order response with the same `Idempotency-Key` and `expectedAccountResetCount`. Within that account generation, a completed retry returns the original position without a second margin debit or duplicate activity event. The database compares the expected generation only after taking the account lock and before writing balance, position, or ledger state, so even a never-before-seen command that was already in flight when reset won cannot enter the new generation. The durable ledger separately rejects a prior-generation key presented with the current generation. A key is scoped to the authenticated user and cannot be reused for a different asset, side, size, leverage, or source command.
 
-1. Client submits market order (asset, side, size, leverage)
-2. Server validates inputs with Zod schemas and checks asset support
-3. `OrderExecutor` calculates notional value, required margin, and liquidation price
-4. PostgreSQL `execute_market_order` atomically: locks account → checks balance → deducts margin → creates position
-5. Position returned to client with WebSocket broadcast
+In non-production environments, `/api/stress-test/speed` exposes a public `GET` and authenticated `POST` for the synthetic WebSocket throughput panel.
 
-### PnL Calculation
+## Public WebSocket protocol
 
-The `PnlCalculator` handles all trade math:
-
-| Metric | Formula |
-|--------|---------|
-| PnL (Long) | `(currentPrice - entryPrice) × size` |
-| PnL (Short) | `(entryPrice - currentPrice) × size` |
-| PnL % | `((priceDiff / entryPrice) × 100) × leverage` |
-| Liquidation (Long) | `entryPrice × (1 - (1 - maintenanceMargin) / leverage)` |
-| Liquidation (Short) | `entryPrice × (1 + (1 - maintenanceMargin) / leverage)` |
-| Win Rate | `winningTrades / totalTrades × 100` |
-| Profit Factor | `grossProfit / grossLoss` |
-| Max Drawdown | Peak-to-trough analysis on cumulative PnL |
-
-### Trading Constants
-
-| Parameter | Value |
-|-----------|-------|
-| Initial Balance | $100,000 USDC |
-| Min Order Size | 0.001 |
-| Max Leverage | 50× |
-| Default Leverage | 10× |
-| Maintenance Margin | 5% |
-| Maker Fee | 0.02% |
-| Taker Fee | 0.05% |
-
-## Market Data Pipeline
-
-The server aggregates data from three sources with intelligent caching and fallback:
-
-### Price Feed
-- **Source**: Hyperliquid `allMids` WebSocket (single subscription for all assets)
-- **Delivery**: Broadcast to all subscribed clients on every tick
-
-### Orderbook
-- **Source**: Hyperliquid `l2Book` WebSocket (subscribed on-demand per asset)
-- **Depth**: 15 levels bid/ask with cumulative totals and spread calculation
-- **Subscription Queue**: Assets are subscribed with 1-second delays to avoid rate limiting
-
-### Candles
-- **Historical**: CryptoCompare REST API with per-timeframe cache TTLs (30s for 1m up to 1hr for 1d)
-- **Live Updates**: Binance US WebSocket klines merged into cached historical data
-- **Fallback**: If both APIs fail, generates synthetic candles based on the last known WebSocket price
-- **Cache Validation**: Invalidates if cached price drifts >30% from current WebSocket price
-- **Deduplication**: Pending fetch promises tracked to prevent duplicate API calls for the same asset/timeframe
-
-### Supported Assets
-
-70+ perpetual futures including BTC, ETH, SOL, XRP, DOGE, AVAX, LINK, ARB, OP, SUI, PEPE, WIF, TRUMP, HYPE, TAO, and more. The asset list is fetched from Hyperliquid on startup with a hardcoded fallback.
-
-## WebSocket Protocol
-
-### Client → Server
+Connect to `ws://localhost:3001/ws`. The socket is intentionally public and accepts no bearer token in the URL.
 
 ```json
+{ "type": "subscribe", "channel": "price:BTC" }
 { "type": "subscribe", "channel": "orderbook:BTC" }
-{ "type": "unsubscribe", "channel": "candles:ETH" }
+{ "type": "subscribe", "channel": "trades:BTC" }
+{ "type": "unsubscribe", "channel": "trades:BTC" }
 ```
 
-### Server → Client
+Supported market channels:
 
-| Channel Pattern | Data |
-|----------------|------|
+| Channel | Payload |
+|---|---|
 | `price:{asset}` | `{ asset, price, timestamp }` |
-| `orderbook:{asset}` | `{ bids, asks, timestamp }`, each level as `[price, size]` |
-| `candles:{asset}` | `{ time, open, high, low, close, volume }` |
+| `orderbook:{asset}` | `{ bids, asks, timestamp }` |
 | `trades:{asset}` | `{ id, price, size, side, timestamp }` |
-| `positions` | Position updates for authenticated users |
-| `stress_test` | TPS stats when stress test is active |
 
-Connections support wildcard subscriptions (e.g., `price:*`), heartbeat pings every 30 seconds, and optional JWT authentication via query parameter.
+The server also reserves `tps` and `ping` for the development throughput panel and connection health. Asset channels accept only known case-preserved market symbols. Because prices already use the global `allMids` feed, `price:*` is the only wildcard; L2 and trade wildcards are rejected.
 
-## API Reference
+## Verification
 
-### Auth
+At this revision:
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/register` | No | Create account (email + password) |
-| POST | `/api/auth/login` | No | Login, returns JWT |
+- 159/159 Jest tests pass across 14 server suites and exit cleanly.
+- 45/45 Vitest tests pass across 6 client test files.
+- 83/83 pgTAP assertions pass after replaying the complete migration chain.
+- Client and server typechecks pass.
+- Client and server ESLint checks pass with zero warnings.
+- Client and server production builds pass on Node 22.13.0.
 
-### Account
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/account` | Yes | Get balance, equity, margin usage |
-| POST | `/api/account/reset` | Yes | Reset to $100k, close positions, clear history |
-
-### Trading
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/trading/order` | Yes | Place market order `{ asset, side, size, leverage }` |
-| GET | `/api/trading/positions` | Yes | Get open positions |
-| POST | `/api/trading/close/:id` | Yes | Close position at current market price |
-
-### Market
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/market/candles` | No | Historical candles `?asset=BTC&timeframe=1h&limit=500` |
-
-### Leaderboard
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/leaderboard` | No | Global rankings by PnL %, win rate, or trade count |
-
-### Stress Test
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/stress-test` | No | Set speed: `off`, `slow` (10 TPS), `medium` (100), `fast` (500), `max` (1000) |
-
-## Stress Testing
-
-The built-in stress test generates synthetic trade messages to demonstrate WebSocket throughput:
-
-| Speed | TPS | Description |
-|-------|-----|-------------|
-| Slow | 10 | Baseline performance |
-| Medium | 100 | Moderate load |
-| Fast | 500 | High throughput |
-| Max | 1,000 | Maximum stress |
-
-Stats broadcast every second: current TPS, peak TPS, total messages, average latency, and connected client count.
-
-## Development
-
-### Scripts
+Run the repository gates:
 
 ```bash
-npm run dev            # Start client + server concurrently
-npm run dev:client     # Vite dev server (port 5173)
-npm run dev:server     # tsx watch (port 3001)
-npm run build          # Build client + server
-npm run lint           # Lint client + server
-npm run typecheck      # TypeScript check client + server
-npm test               # Jest tests (server)
-npm run test:coverage  # Jest with coverage report
+npm run lint
+npm run typecheck
+npm test
+npm run test:db
+npm run build
 ```
 
----
+GitHub Actions runs lint, typecheck, client Vitest tests, server Jest coverage, a local Supabase migration/pgTAP replay, and production builds for pushes to `main` and pull requests targeting `main`.
 
-## Testing
+## Known limitations and release gate
 
-69 tests across 3 test suites covering the trading engine core.
+- The missing former Supabase environment means the old public demo is not evidence for this revision.
+- Before deployment, replay every migration into a fresh or recovered Supabase project, run the database suite, audit or quarantine legacy position rows and invalid account reset counters, verify repaired identities, configure the username-only Auth gate, and complete authenticated browser QA.
+- The simulator does not model partial fills, funding, exchange latency, automatic liquidation, limit orders, or real capital.
+- Historical candles are cached REST snapshots; the latest chart bar is a client-side display overlay from the live price feed.
+- Rate limiting is process-local. A multi-instance deployment needs a shared limiter.
+- Activity events are emitted after trading commits on a best-effort basis; they are not an outbox and cannot guarantee deterministic replay.
+- Account reset is an explicit, non-idempotent command. The client never retries it automatically; if its HTTP outcome is ambiguous, refresh authoritative account state before choosing whether to reset again.
+- Market availability depends on external Hyperliquid and CryptoCompare services.
 
-| Test Suite | File | Coverage |
-|-----------|------|----------|
-| Trade Math | `calculations.test.ts` | PnL, margin, liquidation price, fee calculations |
-| Order Execution | `orderExecutor.test.ts` | Validation, execution flow, error handling |
-| PnL Calculator | `pnlCalculator.test.ts` | Win rate, profit factor, max drawdown |
+## Project structure
 
-```bash
-npm test              # run all tests
-npm run test:coverage # with coverage report
-```
-
-**CI pipeline** runs on every push and PR via GitHub Actions: lint → typecheck → test with coverage → build. Coverage reports are uploaded as artifacts.
-
----
-
-## Quality
-
-| Check | Result |
-|-------|--------|
-| ESLint | 0 warnings, 0 errors |
-| TypeScript | Strict mode, no errors (client + server) |
-| Tests | 69/69 passing |
-| Build | Client + server build successfully |
-| Code Splitting | 4 manual chunks (react-vendor, supabase, charts, state) |
-| Security | Helmet, CORS, rate limiting, RLS, JWT auth |
-
----
-
-## Performance
-
-Build benchmarked April 2026. All budgets passing.
-
-| Chunk | Raw | Gzip |
-|-------|-----|------|
-| react-vendor | 162 KB | 53 KB |
-| supabase | 171 KB | 44 KB |
-| charts | 162 KB | 52 KB |
-| app code | 114 KB | 28 KB |
-| zustand | 3.6 KB | 1.6 KB |
-| CSS | 38 KB | 7.6 KB |
-
-| Budget | Threshold | Actual | Status |
-|--------|-----------|--------|--------|
-| Total JS (gzip) | < 200 KB | 179 KB | PASS |
-| Largest chunk | < 500 KB | 171 KB | PASS |
-| App code (gzip) | < 50 KB | 28 KB | PASS |
-| CSS (gzip) | < 20 KB | 7.6 KB | PASS |
-| Build time | < 10s | 3.9s | PASS |
-
-Total gzip transfer: **187 KB** (JS + CSS). 142 modules transformed in 3.9s. Code-split into 4 vendor chunks for optimal caching.
-
----
-
-## Security
-
-| Layer | Implementation |
-|-------|---------------|
-| Authentication | Supabase Auth with JWT Bearer tokens |
-| Authorization | Row Level Security (RLS) on all PostgreSQL tables |
-| Input Validation | Zod schemas on all API endpoints |
-| HTTP Security | Helmet headers, CORS allowlist (no wildcards) |
-| Rate Limiting | 100 req/min per IP with `X-RateLimit-*` headers |
-| Database | Atomic stored procedures with `FOR UPDATE` row locking |
-| Secrets | All credentials via environment variables, `.env` files gitignored |
-
----
-
-## Deployment
-
-### Frontend → Netlify
-
-A `netlify.toml` is included in `client/`. Connect your repo and set build command to `npm run build` with publish directory `dist`.
-
-### Backend → Render
-
-A `render.yaml` blueprint is included. Set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` as environment variables.
-
-### Docker
-
-```bash
-docker build \
-  --build-arg VITE_API_URL=https://your-api.com \
-  --build-arg VITE_WS_URL=wss://your-api.com/ws \
-  --build-arg VITE_SUPABASE_URL=https://your-project.supabase.co \
-  --build-arg VITE_SUPABASE_ANON_KEY=your-key \
-  -t hyperliquid-trading-sim .
-
-docker run -p 3001:3001 \
-  -e SUPABASE_URL=https://your-project.supabase.co \
-  -e SUPABASE_SERVICE_KEY=your-key \
-  hyperliquid-trading-sim
-```
-
-The image runs as non-root, includes a healthcheck against `/health`, and uses multi-stage builds to minimize final image size.
-
-## Project Structure
-
-```
-hyperliquid-trading-sim/
-├── client/                          # React frontend (Vite)
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── auth/                # LoginForm, RegisterForm, AuthGuard
-│   │   │   ├── chart/               # PriceChart, CandleTooltip, ChartControls
-│   │   │   ├── layout/              # Header, Sidebar, MainLayout, MobileNav
-│   │   │   ├── leaderboard/         # Leaderboard, LeaderboardRow, LeaderboardTabs
-│   │   │   ├── orderbook/           # Orderbook, OrderbookRow, OrderbookSpread
-│   │   │   ├── participants/        # ParticipantsTable, FollowButton (whale tracking)
-│   │   │   ├── stress-test/         # StressTestPanel, TPSDisplay, StressTestStats
-│   │   │   ├── trades/              # RecentTrades, TradeRow
-│   │   │   ├── trading/             # OrderForm, PositionPanel, OpenOrders, AccountStats
-│   │   │   └── ui/                  # Button, Input, Modal, Toast, Tooltip, Tabs, etc.
-│   │   ├── config/                  # Asset definitions, constants, timeframes
-│   │   ├── context/                 # Auth, Market, Trading, WebSocket, Toast providers
-│   │   ├── hooks/                   # useAuth, useMarketData, usePositions, useWebSocket, etc.
-│   │   ├── lib/                     # API client, Supabase client, WebSocket manager, utils
-│   │   ├── pages/                   # Home, Trading, Leaderboard, Profile, Login, Register
-│   │   ├── styles/                  # Global CSS + Tailwind
-│   │   └── types/                   # Market, trading, user, WebSocket type definitions
-│   ├── netlify.toml
-│   └── vite.config.ts
-├── server/                          # Node.js backend (Express)
-│   ├── src/
-│   │   ├── __tests__/               # Jest tests for trading engine
-│   │   ├── config/                  # Assets, constants, whale addresses
-│   │   ├── lib/                     # Supabase client, logger, custom errors
-│   │   ├── middleware/              # Auth (JWT), rate limiting, validation, error handler
-│   │   ├── routes/                  # Auth, trading, market, leaderboard, account, stress test
-│   │   ├── services/
-│   │   │   ├── binance/             # Binance US WebSocket kline streaming
-│   │   │   ├── hyperliquid/         # Hyperliquid WS + CryptoCompare REST + candle caching
-│   │   │   ├── leaderboard/         # Ranking queries and stat aggregation
-│   │   │   ├── stress-test/         # Synthetic trade generator with TPS tracking
-│   │   │   └── trading/             # OrderExecutor, PositionManager, PnlCalculator, AccountManager
-│   │   ├── types/                   # Server-side type definitions
-│   │   ├── utils/                   # Calculation helpers
-│   │   └── websocket/               # WebSocket server with pub/sub, heartbeat, auth
-│   └── tsconfig.json
-├── shared/                          # Shared TypeScript types (client + server)
-├── supabase/
-│   ├── migrations/                  # 7 SQL migrations (tables, RLS, stored procedures)
-│   └── seed/                        # Seed data
-├── .github/workflows/ci.yml        # GitHub Actions CI pipeline
-├── Dockerfile                       # Multi-stage production Docker build
-└── render.yaml                      # Render deployment blueprint
+```text
+client/                         React, Vite, Zustand, Supabase Auth UI
+server/src/
+  middleware/                  auth, validation, rate limit, errors
+  routes/                      market, trading, account, ranking, replay
+  services/hyperliquid/        live feeds and bounded candle snapshots
+  services/trading/            command and account orchestration
+  websocket/                   public subscription server and limits
+supabase/
+  migrations/                  schema, RLS, privileges, transaction functions
+  tests/                       pgTAP authority and accounting suite
+.github/workflows/ci.yml       lint, typecheck, test, database replay, build
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -1,40 +1,51 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
-import { validateBody, validateParams } from '../middleware/validation.middleware.js';
+import { validateBody, validateParams, validateQuery } from '../middleware/validation.middleware.js';
 import { OrderExecutor, PositionManager } from '../services/trading/index.js';
-import { LeaderboardService } from '../services/leaderboard/index.js';
 import { getSupabase } from '../lib/supabase.js';
 import { logger } from '../lib/logger.js';
 import { priceService } from '../services/price/index.js';
 import type { HyperliquidService } from '../services/hyperliquid/index.js';
 import { eventService } from '../services/events/index.js';
+import { fetchAssetsFromHyperliquid, getAssetConfig } from '../config/assets.js';
+import { getHttpStatus } from '../lib/errors.js';
 
 export const tradingRoutes = Router();
 
-let hyperliquidService: HyperliquidService | null = null;
-
 export function setHyperliquidService(service: HyperliquidService) {
-  hyperliquidService = service;
   priceService.setHyperliquidService(service);
 }
 
 const orderExecutor = new OrderExecutor();
 const positionManager = new PositionManager();
-const leaderboardService = new LeaderboardService();
 
 const placeOrderSchema = z.object({
   asset: z.string(),
   side: z.enum(['long', 'short']),
-  size: z.number().positive(),
-  leverage: z.number().min(1).max(50),
+  size: z.number().finite().positive(),
+  leverage: z.number().finite().int().min(1).max(50),
+  expectedAccountResetCount: z.number().int().nonnegative().safe(),
   source: z.enum(['manual', 'signal']).optional(),
-  signalId: z.string().optional(),
+  signalId: z.string().min(1).max(100).regex(/^[A-Za-z0-9:_-]+$/).optional(),
+}).superRefine((order, context) => {
+  const isSignal = order.source === 'signal';
+  if (isSignal !== Boolean(order.signalId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['signalId'],
+      message: 'signalId is required exactly when source is signal',
+    });
+  }
 });
-
 const positionIdSchema = z.object({
   id: z.string().uuid(),
 });
+const idempotencyKeySchema = z.string().uuid();
+const tradeHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+  offset: z.coerce.number().int().min(0).max(10000).optional().default(0),
+}).strict();
 
 // Get current price via PriceService (live WS → last known → null)
 function getCurrentPrice(asset: string): number | null {
@@ -48,8 +59,35 @@ tradingRoutes.post(
   validateBody(placeOrderSchema),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const { asset, side, size, leverage, source, signalId } = req.body;
+      const {
+        asset: requestedAsset,
+        side,
+        size,
+        leverage,
+        expectedAccountResetCount,
+        source,
+        signalId,
+      } = req.body;
       const userId = req.userId!;
+      const idempotencyKeyResult = idempotencyKeySchema.safeParse(
+        req.get('Idempotency-Key')
+      );
+      if (!idempotencyKeyResult.success) {
+        return res.status(400).json({
+          error: 'A valid UUID Idempotency-Key header is required',
+        });
+      }
+      const idempotencyKey = idempotencyKeyResult.data;
+
+      let assetConfig = getAssetConfig(requestedAsset);
+      if (!assetConfig) {
+        await fetchAssetsFromHyperliquid();
+        assetConfig = getAssetConfig(requestedAsset);
+      }
+      if (!assetConfig) {
+        return res.status(400).json({ error: `Invalid asset: ${requestedAsset}` });
+      }
+      const asset = assetConfig.symbol;
 
       logger.info(`Order request: ${side} ${size} ${asset} @ ${leverage}x for user ${userId} (source: ${source || 'manual'})`);
 
@@ -61,18 +99,23 @@ tradingRoutes.post(
 
       const position = await orderExecutor.executeMarketOrder(
         userId,
-        { asset, side, size, leverage, source, signalId },
-        currentPrice
+        { asset, side, size, leverage, expectedAccountResetCount, source, signalId },
+        currentPrice,
+        idempotencyKey
       );
 
       logger.info(`Order executed: position ${position.id}`);
+      res.setHeader('Idempotency-Key', idempotencyKey);
       res.status(201).json(position);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to place order';
       logger.error(`Order error for user ${req.userId}: ${message}`);
       
-      // Return proper error with message
-      res.status(400).json({ 
+      // Operational validation/conflict errors carry their own 4xx status.
+      // Unknown failures stay 5xx because an RPC response can be lost after
+      // commit; reporting those as a terminal 400 can cause a client to rotate
+      // its idempotency key and execute the order twice.
+      res.status(getHttpStatus(error)).json({
         error: message,
         details: error instanceof Error ? error.name : 'UnknownError'
       });
@@ -91,8 +134,9 @@ tradingRoutes.get('/positions', authMiddleware, async (req: AuthenticatedRequest
       const currentPrice = livePrice ?? position.entryPrice;
       const priceDiff = currentPrice - position.entryPrice;
       const direction = position.side === 'long' ? 1 : -1;
-      const unrealizedPnl = priceDiff * position.size * direction;
-      const unrealizedPnlPercent = (priceDiff / position.entryPrice) * 100 * direction * position.leverage;
+      const rawUnrealizedPnl = priceDiff * position.size * direction;
+      const unrealizedPnl = Math.max(rawUnrealizedPnl, -position.margin);
+      const unrealizedPnlPercent = (unrealizedPnl / position.margin) * 100;
 
       return {
         ...position,
@@ -139,14 +183,11 @@ tradingRoutes.post(
         asset: closedPosition.asset,
         side: closedPosition.side,
         entryPrice: closedPosition.entryPrice,
-        exitPrice: currentPrice,
+        exitPrice: closedPosition.currentPrice,
         size: closedPosition.size,
         realizedPnl: closedPosition.realizedPnl,
         source: closedPosition.source,
       }, userId);
-
-      // Update leaderboard stats
-      await leaderboardService.updateUserStats(userId);
 
       res.json(closedPosition);
     } catch (error) {
@@ -159,10 +200,9 @@ tradingRoutes.post(
 );
 
 // Get trade history
-tradingRoutes.get('/history', authMiddleware, async (req: AuthenticatedRequest, res) => {
+tradingRoutes.get('/history', authMiddleware, validateQuery(tradeHistoryQuerySchema), async (req: AuthenticatedRequest, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
-    const offset = parseInt(req.query.offset as string) || 0;
+    const { limit, offset } = req.query as unknown as z.infer<typeof tradeHistoryQuerySchema>;
     const supabase = getSupabase();
 
     const { data: trades, error, count } = await supabase
@@ -183,51 +223,5 @@ tradingRoutes.get('/history', authMiddleware, async (req: AuthenticatedRequest, 
   } catch (error) {
     logger.error('Get trade history error:', error);
     res.status(500).json({ error: 'Failed to fetch trade history' });
-  }
-});
-
-// Get account info (useful for debugging)
-tradingRoutes.get('/account', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const supabase = getSupabase();
-    const { data: account, error } = await supabase
-      .from('accounts')
-      .select('*')
-      .eq('user_id', req.userId!)
-      .single();
-
-    if (error || !account) {
-      return res.status(404).json({ error: 'Account not found' });
-    }
-
-    // Get open positions for margin calculation
-    const { data: positions } = await supabase
-      .from('positions')
-      .select('margin')
-      .eq('user_id', req.userId!)
-      .eq('status', 'open');
-
-    const usedMargin = (positions || []).reduce((sum, p) => sum + p.margin, 0);
-    const availableBalance = account.balance - usedMargin;
-
-    res.json({
-      balance: account.balance,
-      usedMargin,
-      availableBalance,
-      initialBalance: account.initial_balance,
-    });
-  } catch (error) {
-    logger.error('Get account error:', error);
-    res.status(500).json({ error: 'Failed to fetch account' });
-  }
-});
-
-// Get limit orders (market orders only — returns empty array)
-tradingRoutes.get('/limit-orders', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    res.json([]);
-  } catch (error) {
-    logger.error('Get limit orders error:', error);
-    res.status(500).json({ error: 'Failed to fetch limit orders' });
   }
 });

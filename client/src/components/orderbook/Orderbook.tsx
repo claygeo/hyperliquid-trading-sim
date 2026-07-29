@@ -8,10 +8,9 @@ interface OrderbookProps {
   asset: string;
   isLoading?: boolean;
   compact?: boolean;
-  onPriceClick?: (price: number) => void;
 }
 
-export function Orderbook({ orderbook, asset, isLoading: _isLoading, compact = false, onPriceClick }: OrderbookProps) {
+export function Orderbook({ orderbook, asset, isLoading: _isLoading, compact = false }: OrderbookProps) {
   // Show loading or empty state
   if (!orderbook || (orderbook.bids.length === 0 && orderbook.asks.length === 0)) {
     return (
@@ -60,7 +59,6 @@ export function Orderbook({ orderbook, asset, isLoading: _isLoading, compact = f
             maxTotal={maxTotal}
             side="ask"
             compact={compact}
-            onClick={onPriceClick}
           />
         ))}
       </div>
@@ -84,7 +82,6 @@ export function Orderbook({ orderbook, asset, isLoading: _isLoading, compact = f
             maxTotal={maxTotal}
             side="bid"
             compact={compact}
-            onClick={onPriceClick}
           />
         ))}
       </div>

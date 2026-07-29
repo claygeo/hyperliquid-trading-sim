@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '@/lib/router';
 import { useAuthStore } from '../hooks/useAuth';
 import { RegisterForm } from '../components/auth/RegisterForm';
 
@@ -64,8 +64,8 @@ export function RegisterPage() {
             <p className="text-text-muted text-xs">Max Leverage</p>
           </div>
           <div className="bg-bg-secondary/50 rounded-lg p-3">
-            <p className="text-accent-purple font-bold text-lg">3</p>
-            <p className="text-text-muted text-xs">Assets</p>
+            <p className="text-accent-purple font-bold text-lg">40+</p>
+            <p className="text-text-muted text-xs">Markets</p>
           </div>
         </div>
       </div>

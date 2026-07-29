@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '@/lib/router';
 import { useAuthStore } from '../hooks/useAuth';
 import { LoginForm } from '../components/auth/LoginForm';
 

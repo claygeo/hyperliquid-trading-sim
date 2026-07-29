@@ -3,4 +3,6 @@ export const config = {
   wsUrl: import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws',
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+  enableSyntheticEmailSignup:
+    import.meta.env.VITE_ENABLE_SYNTHETIC_EMAIL_SIGNUP === 'true',
 } as const;

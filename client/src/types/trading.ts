@@ -1,7 +1,5 @@
 export type OrderSide = 'long' | 'short';
-export type OrderType = 'market' | 'limit';
 export type PositionStatus = 'open' | 'closed' | 'liquidated';
-export type LimitOrderStatus = 'pending' | 'filled' | 'cancelled' | 'expired';
 
 export type PositionSource = 'manual' | 'signal';
 
@@ -26,50 +24,23 @@ export interface Position {
   closedAt?: string;
 }
 
-export interface LimitOrder {
-  id: string;
-  oderId: string;
-  asset: string;
-  side: OrderSide;
-  size: number;
-  price: number;
-  leverage: number;
-  status: LimitOrderStatus;
-  createdAt: string;
-  filledAt?: string;
-  cancelledAt?: string;
-}
-
-export interface Order {
-  id: string;
-  oderId: string;
-  asset: string;
-  side: OrderSide;
-  type: OrderType;
-  size: number;
-  price: number;
-  leverage: number;
-  status: 'pending' | 'filled' | 'cancelled';
-  createdAt: string;
-  filledAt?: string;
-}
-
 export interface Account {
   id: string;
-  oderId: string;
+  userId: string;
   balance: number;
   initialBalance: number;
   equity: number;
   unrealizedPnl: number;
   usedMargin: number;
   availableMargin: number;
+  priceStale: boolean;
   resetCount: number;
   createdAt: string;
 }
 
 export interface TradeHistory {
   id: string;
-  oderId: string;
+  userId: string;
   asset: string;
   side: OrderSide;
   entryPrice: number;
@@ -105,8 +76,7 @@ export interface PlaceOrderRequest {
   side: OrderSide;
   size: number;
   leverage: number;
-  type?: OrderType;
-  price?: number; // Required for limit orders
+  expectedAccountResetCount: number;
   source?: PositionSource;
   signalId?: string;
 }

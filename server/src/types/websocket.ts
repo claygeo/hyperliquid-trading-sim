@@ -1,7 +1,6 @@
 export type WSMessageType =
   | 'subscribe'
   | 'unsubscribe'
-  | 'candle'
   | 'orderbook'
   | 'trade'
   | 'position'
@@ -37,7 +36,7 @@ export interface TPSStats {
 
 export interface ClientConnection {
   id: string;
-  userId?: string;
+  ipAddress: string;
   subscriptions: Set<string>;
   isAlive: boolean;
   lastPing: number;

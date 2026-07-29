@@ -7,7 +7,6 @@ interface OrderbookRowProps {
   maxTotal: number;
   side: 'bid' | 'ask';
   compact?: boolean;
-  onClick?: (price: number) => void;
 }
 
 // Format price with appropriate decimals
@@ -27,25 +26,17 @@ function formatSize(size: number): string {
   return size.toFixed(6);
 }
 
-export function OrderbookRow({ price, size, total, maxTotal, side, compact = false, onClick }: OrderbookRowProps) {
+export function OrderbookRow({ price, size, total, maxTotal, side, compact = false }: OrderbookRowProps) {
   const percentage = (total / maxTotal) * 100;
   const isBid = side === 'bid';
-
-  const handleClick = () => {
-    if (onClick) {
-      onClick(price);
-    }
-  };
 
   return (
     <div 
       className={cn(
-        'relative grid grid-cols-2 gap-1 font-mono transition-colors cursor-pointer',
+        'relative grid grid-cols-2 gap-1 font-mono',
         // More vertical padding to fill space
-        compact ? 'px-2 py-[6px] text-[11px]' : 'px-3 py-[5px] text-xs',
-        onClick && 'hover:bg-bg-tertiary active:bg-bg-elevated'
+        compact ? 'px-2 py-[6px] text-[11px]' : 'px-3 py-[5px] text-xs'
       )}
-      onClick={handleClick}
     >
       {/* Depth bar */}
       <div

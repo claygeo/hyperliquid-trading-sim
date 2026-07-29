@@ -1,5 +1,5 @@
 # ---- Base ----
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 WORKDIR /app
 
 # ---- Install server dependencies ----
@@ -15,7 +15,6 @@ RUN cd server && npm ci
 # ---- Build server ----
 FROM server-build-deps AS server-build
 COPY server/ ./server/
-COPY shared/ ./shared/
 RUN cd server && npm run build
 
 # ---- Install client dependencies ----
@@ -30,7 +29,7 @@ ARG VITE_SUPABASE_ANON_KEY
 RUN cd client && npm run build
 
 # ---- Production ----
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 
 # Security: run as non-root
@@ -44,9 +43,6 @@ COPY --from=server-build /app/server/package.json ./server/package.json
 
 # Copy built client (can be served by a reverse proxy or static host)
 COPY --from=client-build /app/client/dist ./client/dist
-
-# Copy shared types
-COPY shared/ ./shared/
 
 USER appuser
 

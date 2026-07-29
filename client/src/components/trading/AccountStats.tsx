@@ -10,16 +10,15 @@ import type { UserStats } from '../../types/user';
 interface AccountStatsProps {
   account: Account | null;
   stats: UserStats | null;
-  positions: { unrealizedPnl: number }[];
   onReset?: () => Promise<void>;
 }
 
-export function AccountStats({ account, stats, positions, onReset }: AccountStatsProps) {
+export function AccountStats({ account, stats, onReset }: AccountStatsProps) {
   const [isResetting, setIsResetting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const totalUnrealizedPnl = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
-  const equity = (account?.balance || 0) + totalUnrealizedPnl;
+  const totalUnrealizedPnl = account?.unrealizedPnl ?? 0;
+  const equity = account?.equity ?? 0;
   const totalPnlPercent = account?.initialBalance
     ? ((equity - account.initialBalance) / account.initialBalance) * 100
     : 0;
@@ -39,6 +38,9 @@ export function AccountStats({ account, stats, positions, onReset }: AccountStat
     <div className="bg-bg-secondary rounded-xl border border-border p-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-text-primary">Account Overview</h3>
+        {account?.priceStale && (
+          <span className="text-xs text-accent-yellow">Price feed delayed</span>
+        )}
         {onReset && (
           <Button
             variant="ghost"
@@ -94,12 +96,12 @@ export function AccountStats({ account, stats, positions, onReset }: AccountStat
         </Tooltip>
 
         {/* Available Margin */}
-        <Tooltip content="Balance minus margin used by open positions">
+        <Tooltip content="Balance available after open-position margin is locked">
           <div className="p-3 bg-bg-tertiary rounded-lg cursor-help">
             <div className="text-xs text-text-muted mb-1">Available</div>
             <div className="text-lg font-semibold font-mono text-text-primary">
               <AnimatedNumber
-                value={account?.availableMargin || 0}
+                value={account?.availableMargin ?? 0}
                 format={formatUSD}
                 duration={300}
               />
