@@ -2,6 +2,10 @@
   "name": "hyperliquid-trading-sim",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "cd client && npm run dev",
@@ -16,8 +20,11 @@
     "typecheck": "npm run typecheck:client && npm run typecheck:server",
     "typecheck:client": "cd client && npx tsc --noEmit",
     "typecheck:server": "cd server && npm run typecheck",
-    "test": "cd server && npm test",
-    "test:coverage": "cd server && npm run test:coverage"
+    "test": "npm run test:client && npm run test:server",
+    "test:client": "cd client && npm test",
+    "test:server": "cd server && npm test",
+    "test:db": "npx --yes supabase@2.110.0 test db --local",
+    "test:coverage": "npm run test:client && cd server && npm run test:coverage"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

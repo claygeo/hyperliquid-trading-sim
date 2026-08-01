@@ -3,118 +3,167 @@ import type {
   Account,
   Position,
   PlaceOrderRequest,
-  LimitOrder,
   TradeHistory,
 } from '../types/trading';
 import type { LeaderboardEntry, UserStats } from '../types/user';
-import type { Candle, MarketData } from '../types/market';
+import type { Candle } from '../types/market';
 import type { Asset } from '../config/assets';
 
-class ApiClient {
+export class AuthSessionChangedError extends Error {
+  constructor() {
+    super('Authenticated session changed while the request was in flight');
+    this.name = 'AuthSessionChangedError';
+  }
+}
+
+export const isAuthSessionChangedError = (
+  error: unknown
+): error is AuthSessionChangedError => error instanceof AuthSessionChangedError;
+
+export class ApiResponseError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiResponseError';
+    this.status = status;
+  }
+}
+
+const UNUSABLE_IDEMPOTENCY_KEY_ERROR = /(?:valid UUID Idempotency-Key|invalid idempotency key|Idempotency key reused with different order parameters|Idempotency key belongs to a prior account reset|Account reset generation changed|Idempotent order result is unavailable)/i;
+
+export const isUnusableOrderKeyResponseError = (
+  error: unknown
+): error is ApiResponseError =>
+  error instanceof ApiResponseError
+  && error.status >= 400
+  && error.status < 500
+  && UNUSABLE_IDEMPOTENCY_KEY_ERROR.test(error.message);
+
+export class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
+  private sessionSubject: string | null = null;
+  private sessionGeneration = 0;
+  private authenticatedRequests = new Set<AbortController>();
 
-  constructor() {
-    this.baseUrl = config.apiUrl;
+  constructor(baseUrl = config.apiUrl) {
+    this.baseUrl = baseUrl;
   }
 
-  setToken(token: string | null) {
+  setToken(token: string | null, userId: string | null = token) {
+    const nextSubject = token ? userId : null;
+    const sessionChanged = nextSubject !== this.sessionSubject;
+
     this.token = token;
+    this.sessionSubject = nextSubject;
+
+    if (sessionChanged) {
+      this.sessionGeneration += 1;
+      for (const controller of this.authenticatedRequests) {
+        controller.abort();
+      }
+      this.authenticatedRequests.clear();
+    }
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    authenticated = false
   ): Promise<T> {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
+    const requestGeneration = this.sessionGeneration;
+    const requestToken = this.token;
+    const controller = authenticated ? new AbortController() : null;
+    const headers = new Headers(options.headers);
+    headers.set('Content-Type', 'application/json');
+
+    if (requestToken) {
+      headers.set('Authorization', `Bearer ${requestToken}`);
+    }
+
+    const abortFromCaller = () => controller?.abort();
+    if (controller) {
+      this.authenticatedRequests.add(controller);
+      if (options.signal?.aborted) {
+        controller.abort();
+      } else {
+        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+      }
+    }
+
+    const assertCurrentSession = () => {
+      if (authenticated && requestGeneration !== this.sessionGeneration) {
+        throw new AuthSessionChangedError();
+      }
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller?.signal ?? options.signal,
+      });
+      assertCurrentSession();
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || `HTTP ${response.status}`);
-    }
-
-    return response.json();
-  }
-
-  // Auth
-  async register(email: string, password: string, username: string) {
-    return this.request<{ user: { id: string; email: string }; token: string }>(
-      '/api/auth/register',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email, password, username }),
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        assertCurrentSession();
+        const message = typeof error.error === 'string'
+          ? error.error
+          : typeof error.message === 'string'
+            ? error.message
+            : `HTTP ${response.status}`;
+        throw new ApiResponseError(response.status, message);
       }
-    );
-  }
 
-  async login(email: string, password: string) {
-    return this.request<{ user: { id: string; email: string }; token: string }>(
-      '/api/auth/login',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
+      const data = await response.json();
+      assertCurrentSession();
+      return data as T;
+    } catch (error) {
+      assertCurrentSession();
+      throw error;
+    } finally {
+      if (controller) {
+        this.authenticatedRequests.delete(controller);
+        options.signal?.removeEventListener('abort', abortFromCaller);
       }
-    );
+    }
   }
 
   // Account
   async getAccount(): Promise<Account> {
-    return this.request<Account>('/api/account');
+    return this.request<Account>('/api/account', {}, true);
   }
 
   async resetAccount(): Promise<Account> {
-    return this.request<Account>('/api/account/reset', { method: 'POST' });
+    return this.request<Account>('/api/account/reset', { method: 'POST' }, true);
   }
 
   async getUserStats(): Promise<UserStats> {
-    return this.request<UserStats>('/api/account/stats');
+    return this.request<UserStats>('/api/account/stats', {}, true);
   }
 
   // Trading
-  async placeOrder(order: PlaceOrderRequest): Promise<Position> {
+  async placeOrder(
+    order: PlaceOrderRequest,
+    idempotencyKey: string = crypto.randomUUID()
+  ): Promise<Position> {
     return this.request<Position>('/api/trading/order', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(order),
-    });
-  }
-
-  async placeLimitOrder(order: PlaceOrderRequest & { price: number }): Promise<LimitOrder> {
-    return this.request<LimitOrder>('/api/trading/limit-order', {
-      method: 'POST',
-      body: JSON.stringify(order),
-    });
-  }
-
-  async cancelLimitOrder(orderId: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/api/trading/limit-order/${orderId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getLimitOrders(): Promise<LimitOrder[]> {
-    return this.request<LimitOrder[]>('/api/trading/limit-orders');
+    }, true);
   }
 
   async getPositions(): Promise<Position[]> {
-    return this.request<Position[]>('/api/trading/positions');
+    return this.request<Position[]>('/api/trading/positions', {}, true);
   }
 
   async closePosition(positionId: string): Promise<Position> {
     return this.request<Position>(`/api/trading/close/${positionId}`, {
       method: 'POST',
-    });
+    }, true);
   }
 
   async getTradeHistory(
@@ -122,7 +171,9 @@ class ApiClient {
     offset = 0
   ): Promise<{ trades: TradeHistory[]; total: number }> {
     return this.request<{ trades: TradeHistory[]; total: number }>(
-      `/api/trading/history?limit=${limit}&offset=${offset}`
+      `/api/trading/history?limit=${limit}&offset=${offset}`,
+      {},
+      true
     );
   }
 
@@ -141,22 +192,17 @@ class ApiClient {
     );
   }
 
-  async getMarketData(asset: string): Promise<MarketData> {
-    return this.request<MarketData>(`/api/market/data?asset=${asset}`);
-  }
-
   async getPrice(asset: string): Promise<{ price: number }> {
     return this.request<{ price: number }>(`/api/market/price?asset=${asset}`);
   }
 
   // Leaderboard
   async getLeaderboard(
-    period: 'daily' | 'alltime' = 'alltime',
     limit = 20,
     offset = 0
   ): Promise<{ entries: LeaderboardEntry[]; total: number }> {
     return this.request<{ entries: LeaderboardEntry[]; total: number }>(
-      `/api/leaderboard?period=${period}&limit=${limit}&offset=${offset}`
+      `/api/leaderboard?limit=${limit}&offset=${offset}`
     );
   }
 

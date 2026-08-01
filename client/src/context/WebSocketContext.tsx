@@ -13,13 +13,14 @@ interface WebSocketContextValue {
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(wsClient.isConnected);
 
   useEffect(() => {
+    const unsubscribeState = wsClient.onConnectionState(setIsConnected);
+    setIsConnected(wsClient.isConnected);
     const connect = async () => {
       try {
         await wsClient.connect();
-        setIsConnected(true);
       } catch (error) {
         console.error('WebSocket connection failed:', error);
       }
@@ -27,11 +28,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     connect();
 
-    const handleConnect = () => setIsConnected(true);
-    wsClient.on('connected', handleConnect);
-
     return () => {
-      wsClient.off('connected', handleConnect);
+      unsubscribeState();
       wsClient.disconnect();
     };
   }, []);

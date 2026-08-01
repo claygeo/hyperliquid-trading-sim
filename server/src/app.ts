@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { rateLimitMiddleware } from './middleware/rateLimit.middleware.js';
-import { authRoutes } from './routes/auth.routes.js';
 import { tradingRoutes } from './routes/trading.routes.js';
 import { marketRoutes } from './routes/market.routes.js';
 import { leaderboardRoutes } from './routes/leaderboard.routes.js';
@@ -11,8 +10,13 @@ import { accountRoutes } from './routes/account.routes.js';
 import { stressTestRoutes } from './routes/stressTest.routes.js';
 import { suggestionsRoutes } from './routes/suggestions.routes.js';
 import { replayRoutes } from './routes/replay.routes.js';
+import { config } from './config/index.js';
 
 export const app = express();
+
+// Proxy trust is deployment-specific. Direct/local traffic defaults to false,
+// while the Render blueprint explicitly opts into its single trusted hop.
+app.set('trust proxy', config.trustProxyHops || false);
 
 // Security middleware
 app.use(helmet());
@@ -20,9 +24,7 @@ app.use(cors({
   origin: [
     'http://localhost:5173',
     'http://localhost:3000',
-    'https://trading-sim-hl.netlify.app',
-    'https://tradeterm.app',
-    'https://www.tradeterm.app'
+    'https://trading-sim-hl.netlify.app'
   ],
   credentials: true,
 }));
@@ -39,12 +41,13 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
 app.use('/api/trading', tradingRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/account', accountRoutes);
-app.use('/api/stress-test', stressTestRoutes);
+if (config.nodeEnv !== 'production') {
+  app.use('/api/stress-test', stressTestRoutes);
+}
 app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/replay', replayRoutes);
 

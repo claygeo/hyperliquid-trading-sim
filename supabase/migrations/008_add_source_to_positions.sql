@@ -1,9 +1,24 @@
 -- Add source attribution to positions
 -- Tracks whether a position was opened manually or from a tracker signal
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual';
-ALTER TABLE positions ADD COLUMN IF NOT EXISTS signal_id UUID;
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS signal_id TEXT;
 
--- Update the execute_market_order function to accept source and signal_id
+-- A changed argument list creates an overload in PostgreSQL; it does not
+-- replace the existing function. Drop the migration-007 signature first so a
+-- clean replay has one unambiguous market-order RPC.
+DROP FUNCTION IF EXISTS public.execute_market_order(
+  UUID,
+  UUID,
+  VARCHAR,
+  VARCHAR,
+  DECIMAL,
+  DECIMAL,
+  INTEGER,
+  DECIMAL,
+  DECIMAL
+);
+
+-- Update the execute_market_order function to accept source and signal_id.
 CREATE OR REPLACE FUNCTION execute_market_order(
   p_position_id UUID,
   p_user_id UUID,
@@ -15,7 +30,7 @@ CREATE OR REPLACE FUNCTION execute_market_order(
   p_margin DECIMAL,
   p_liquidation_price DECIMAL,
   p_source VARCHAR DEFAULT 'manual',
-  p_signal_id UUID DEFAULT NULL
+  p_signal_id TEXT DEFAULT NULL
 )
 RETURNS JSON AS $$
 DECLARE
@@ -62,5 +77,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Re-grant execute permissions
-GRANT EXECUTE ON FUNCTION execute_market_order TO authenticated;
+-- Re-grant execute permissions. The later hardening migration revokes browser
+-- access and limits this RPC to service_role on existing and fresh databases.
+GRANT EXECUTE ON FUNCTION public.execute_market_order(
+  UUID,
+  UUID,
+  VARCHAR,
+  VARCHAR,
+  DECIMAL,
+  DECIMAL,
+  INTEGER,
+  DECIMAL,
+  DECIMAL,
+  VARCHAR,
+  TEXT
+) TO authenticated;

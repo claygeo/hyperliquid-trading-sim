@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validateQuery } from '../middleware/validation.middleware.js';
-import { isValidAsset, fetchAssetsFromHyperliquid } from '../config/assets.js';
+import { getAssetConfig, fetchAssetsFromHyperliquid } from '../config/assets.js';
 import { logger } from '../lib/logger.js';
 import type { HyperliquidService } from '../services/hyperliquid/index.js';
+import { MAX_EXECUTION_PRICE_AGE_MS, priceService } from '../services/price/index.js';
 
 export const marketRoutes = Router();
 
@@ -12,18 +13,28 @@ let hyperliquidService: HyperliquidService | null = null;
 
 export function setMarketHyperliquidService(service: HyperliquidService) {
   hyperliquidService = service;
+  priceService.setHyperliquidService(service);
   logger.info('HyperliquidService injected into market routes');
 }
 
+async function resolveAssetSymbol(input: string): Promise<string | null> {
+  let asset = getAssetConfig(input);
+  if (!asset) {
+    await fetchAssetsFromHyperliquid();
+    asset = getAssetConfig(input);
+  }
+  return asset?.symbol ?? null;
+}
+
 const candlesQuerySchema = z.object({
-  asset: z.string(),
-  timeframe: z.string().optional().default('1h'),
-  limit: z.string().optional().default('500'),
-});
+  asset: z.string().min(1).max(20),
+  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']).optional().default('1h'),
+  limit: z.coerce.number().int().min(1).max(1000).optional().default(500),
+}).strict();
 
 const priceQuerySchema = z.object({
-  asset: z.string(),
-});
+  asset: z.string().min(1).max(20),
+}).strict();
 
 // Get available assets
 marketRoutes.get('/assets', async (_req, res) => {
@@ -36,21 +47,18 @@ marketRoutes.get('/assets', async (_req, res) => {
   }
 });
 
-// Get historical candles - served from cache
+// Get bounded historical candle snapshots from cache/REST.
 marketRoutes.get('/candles', validateQuery(candlesQuerySchema), async (req, res) => {
   try {
-    const { asset, timeframe, limit } = req.query as {
+    const { asset: requestedAsset, timeframe, limit } = req.query as unknown as {
       asset: string;
       timeframe: string;
-      limit: string;
+      limit: number;
     };
 
-    // Validate asset exists
-    if (!isValidAsset(asset)) {
-      await fetchAssetsFromHyperliquid();
-      if (!isValidAsset(asset)) {
-        return res.status(400).json({ error: `Invalid asset: ${asset}` });
-      }
+    const asset = await resolveAssetSymbol(requestedAsset);
+    if (!asset) {
+      return res.status(400).json({ error: `Invalid asset: ${requestedAsset}` });
     }
 
     if (!hyperliquidService) {
@@ -58,8 +66,8 @@ marketRoutes.get('/candles', validateQuery(candlesQuerySchema), async (req, res)
       return res.status(503).json({ error: 'Service unavailable' });
     }
 
-    // Get candles from service (will use cache or fetch)
-    const candles = await hyperliquidService.getCandles(asset, timeframe, parseInt(limit));
+    // This path has no durable upstream WebSocket side effects.
+    const candles = await hyperliquidService.getCandles(asset, timeframe, limit);
     res.json(candles);
   } catch (error) {
     logger.error('Get candles error:', error);
@@ -70,31 +78,23 @@ marketRoutes.get('/candles', validateQuery(candlesQuerySchema), async (req, res)
 // Get current price - served from cache
 marketRoutes.get('/price', validateQuery(priceQuerySchema), async (req, res) => {
   try {
-    const { asset } = req.query as { asset: string };
-
-    if (!isValidAsset(asset)) {
-      await fetchAssetsFromHyperliquid();
-      if (!isValidAsset(asset)) {
-        return res.status(400).json({ error: `Invalid asset: ${asset}` });
-      }
+    const { asset: requestedAsset } = req.query as { asset: string };
+    const asset = await resolveAssetSymbol(requestedAsset);
+    if (!asset) {
+      return res.status(400).json({ error: `Invalid asset: ${requestedAsset}` });
     }
 
     if (!hyperliquidService) {
       return res.status(503).json({ error: 'Service unavailable' });
     }
 
-    const price = hyperliquidService.getPrice(asset);
+    const price = priceService.getCurrentPrice(asset);
     
-    if (price === 0) {
-      // Try to subscribe to this asset for future updates
-      hyperliquidService.subscribeToAsset(asset);
-      
-      // Return a reasonable estimate
-      const estimates: Record<string, number> = {
-        BTC: 95000, ETH: 3300, SOL: 180, DOGE: 0.35, AVAX: 35,
-        LINK: 22, ARB: 1.2, OP: 2.5, SUI: 4.5, PEPE: 0.000015,
-      };
-      res.json({ price: estimates[asset] || 100 });
+    if (price === null) {
+      return res.status(503).json({
+        error: 'Price feed unavailable',
+        asset,
+      });
     } else {
       res.json({ price });
     }
@@ -104,62 +104,13 @@ marketRoutes.get('/price', validateQuery(priceQuerySchema), async (req, res) => 
   }
 });
 
-// Get market data - served from cache
-marketRoutes.get('/data', validateQuery(priceQuerySchema), async (req, res) => {
-  try {
-    const { asset } = req.query as { asset: string };
-
-    if (!isValidAsset(asset)) {
-      await fetchAssetsFromHyperliquid();
-      if (!isValidAsset(asset)) {
-        return res.status(400).json({ error: `Invalid asset: ${asset}` });
-      }
-    }
-
-    if (!hyperliquidService) {
-      return res.status(503).json({ error: 'Service unavailable' });
-    }
-
-    let price = hyperliquidService.getPrice(asset);
-    
-    if (price === 0) {
-      hyperliquidService.subscribeToAsset(asset);
-      const estimates: Record<string, number> = {
-        BTC: 95000, ETH: 3300, SOL: 180, DOGE: 0.35, AVAX: 35,
-        LINK: 22, ARB: 1.2, OP: 2.5, SUI: 4.5, PEPE: 0.000015,
-      };
-      price = estimates[asset] || 100;
-    }
-
-    // Generate realistic 24h stats based on price
-    const change24h = price * (Math.random() * 0.06 - 0.03);
-
-    res.json({
-      asset,
-      price,
-      change24h,
-      changePercent24h: (change24h / price) * 100,
-      high24h: price * 1.02,
-      low24h: price * 0.98,
-      volume24h: Math.random() * 1000000000,
-      timestamp: Date.now(),
-    });
-  } catch (error) {
-    logger.error('Get market data error:', error);
-    res.status(500).json({ error: 'Failed to fetch market data' });
-  }
-});
-
 // Get orderbook - served from cache
 marketRoutes.get('/orderbook', validateQuery(priceQuerySchema), async (req, res) => {
   try {
-    const { asset } = req.query as { asset: string };
-
-    if (!isValidAsset(asset)) {
-      await fetchAssetsFromHyperliquid();
-      if (!isValidAsset(asset)) {
-        return res.status(400).json({ error: `Invalid asset: ${asset}` });
-      }
+    const { asset: requestedAsset } = req.query as { asset: string };
+    const asset = await resolveAssetSymbol(requestedAsset);
+    if (!asset) {
+      return res.status(400).json({ error: `Invalid asset: ${requestedAsset}` });
     }
 
     if (!hyperliquidService) {
@@ -168,18 +119,11 @@ marketRoutes.get('/orderbook', validateQuery(priceQuerySchema), async (req, res)
 
     const orderbook = hyperliquidService.getOrderbook(asset);
     
-    if (!orderbook) {
-      // Subscribe to this asset for future orderbook updates
-      hyperliquidService.subscribeToAsset(asset);
-      
-      // Return empty orderbook (will be populated via WebSocket soon)
-      res.json({
-        bids: [],
-        asks: [],
-        spread: 0,
-        spreadPercent: 0,
-        midPrice: hyperliquidService.getPrice(asset) || 0,
-        timestamp: Date.now(),
+    if (!orderbook || Date.now() - orderbook.timestamp > MAX_EXECUTION_PRICE_AGE_MS) {
+      hyperliquidService.warmAsset(asset);
+      return res.status(503).json({
+        error: 'Order book feed unavailable',
+        asset,
       });
     } else {
       res.json(orderbook);

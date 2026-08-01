@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { usePositionsStore } from '../hooks/usePositions';
 import { useAccountStore } from '../hooks/useAccount';
-import { useWebSocket } from '../hooks/useWebSocket';
 import type { Position, Account, PlaceOrderRequest } from '../types/trading';
 import type { UserStats } from '../types/user';
 
@@ -24,14 +23,6 @@ const TradingContext = createContext<TradingContextValue | null>(null);
 export function TradingProvider({ children }: { children: ReactNode }) {
   const positionsStore = usePositionsStore();
   const accountStore = useAccountStore();
-  const { isConnected } = useWebSocket();
-
-  useEffect(() => {
-    if (isConnected) {
-      positionsStore.subscribeToPositions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected]);
 
   useEffect(() => {
     accountStore.fetchAccount();

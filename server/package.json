@@ -2,11 +2,14 @@
   "name": "hyperliquid-trading-sim-server",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:coverage": "jest --coverage"
@@ -15,25 +18,39 @@
     "@supabase/supabase-js": "^2.39.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
-    "@types/node": "^20.19.30",
-    "@types/uuid": "^9.0.8",
+    "@types/node": "^22.0.0",
     "@types/ws": "^8.5.10",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^4.22.2",
     "helmet": "^7.1.0",
     "typescript": "^5.3.3",
-    "uuid": "^9.0.1",
-    "ws": "^8.14.2",
+    "ws": "^8.21.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/jest": "^30.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.14.0",
-    "@typescript-eslint/parser": "^6.14.0",
-    "eslint": "^8.55.0",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.4.6",
-    "tsx": "^4.6.2"
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "tsx": "^4.6.2",
+    "typescript-eslint": "^8.65.0"
+  },
+  "overrides": {
+    "@jest/reporters@30.4.1": {
+      "glob": "13.0.6"
+    },
+    "jest-config@30.4.2": {
+      "glob": "13.0.6"
+    },
+    "jest-runtime@30.4.2": {
+      "glob": "13.0.6"
+    },
+    "babel-plugin-istanbul@7.0.1": {
+      ".": "8.0.0",
+      "test-exclude": "8.0.0"
+    }
   }
 }

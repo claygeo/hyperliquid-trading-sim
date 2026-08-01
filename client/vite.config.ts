@@ -21,13 +21,31 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'supabase': ['@supabase/supabase-js'],
-          'charts': ['lightweight-charts'],
-          'state': ['zustand'],
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /node_modules[\\/](react|react-dom|wouter)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'supabase',
+              test: /node_modules[\\/]@supabase[\\/]/,
+              priority: 15,
+            },
+            {
+              name: 'charts',
+              test: /node_modules[\\/]lightweight-charts[\\/]/,
+              priority: 15,
+            },
+            {
+              name: 'state',
+              test: /node_modules[\\/]zustand[\\/]/,
+              priority: 15,
+            },
+          ],
         },
       },
     },

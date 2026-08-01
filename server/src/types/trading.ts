@@ -33,6 +33,7 @@ export interface Account {
   unrealizedPnl: number;
   usedMargin: number;
   availableMargin: number;
+  priceStale: boolean;
   resetCount: number;
   createdAt: string;
 }
@@ -56,6 +57,7 @@ export interface PlaceOrderRequest {
   side: OrderSide;
   size: number;
   leverage: number;
+  expectedAccountResetCount: number;
   source?: PositionSource;
   signalId?: string;
 }

@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { STRESS_TEST_CONFIG } from '../../config/constants.js';
 import { SUPPORTED_ASSETS } from '../../config/assets.js';
 import type { WebSocketServer } from '../../websocket/index.js';
@@ -125,7 +125,7 @@ export class StressTestService {
 
     // Generate synthetic trade
     const trade: Trade = {
-      id: uuidv4(),
+      id: randomUUID(),
       price: newPrice,
       size: Math.random() * 10,
       side: Math.random() > 0.5 ? 'buy' : 'sell',

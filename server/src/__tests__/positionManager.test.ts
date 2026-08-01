@@ -1,7 +1,6 @@
 import { PositionManager } from '../services/trading/positionManager';
 
 // Mock supabase - use a flexible chain that resolves on terminal methods
-const mockRpc = jest.fn();
 let mockQueryResult: { data: any; error: any } = { data: null, error: null };
 
 function makeQueryChain() {
@@ -18,7 +17,6 @@ function makeQueryChain() {
 jest.mock('../lib/supabase', () => ({
   getSupabase: () => ({
     from: jest.fn(() => makeQueryChain()),
-    rpc: mockRpc,
   }),
 }));
 
@@ -95,45 +93,6 @@ describe('PositionManager', () => {
 
       const position = await manager.getPosition('user-1', 'nonexistent');
       expect(position).toBeNull();
-    });
-  });
-
-  describe('checkLiquidations', () => {
-    it('liquidates positions below liquidation price', async () => {
-      const longPosition = {
-        ...mockDbPosition,
-        liquidation_price: 45250,
-        entry_price: 50000,
-        side: 'long',
-      };
-
-      mockQueryResult = { data: [longPosition], error: null };
-      mockRpc.mockResolvedValue({ error: null });
-
-      const prices = new Map([['BTC', 44000]]);
-      const liquidated = await manager.checkLiquidations('user-1', prices);
-
-      expect(liquidated).toHaveLength(1);
-      expect(mockRpc).toHaveBeenCalledWith('liquidate_position_atomic', { p_position_id: 'pos-1' });
-    });
-
-    it('does not liquidate positions above liquidation price', async () => {
-      mockQueryResult = { data: [mockDbPosition], error: null };
-
-      const prices = new Map([['BTC', 52000]]);
-      const liquidated = await manager.checkLiquidations('user-1', prices);
-
-      expect(liquidated).toHaveLength(0);
-      expect(mockRpc).not.toHaveBeenCalled();
-    });
-
-    it('skips assets without prices', async () => {
-      mockQueryResult = { data: [mockDbPosition], error: null };
-
-      const prices = new Map<string, number>();
-      const liquidated = await manager.checkLiquidations('user-1', prices);
-
-      expect(liquidated).toHaveLength(0);
     });
   });
 });

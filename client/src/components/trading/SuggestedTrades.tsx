@@ -92,6 +92,12 @@ export function SuggestedTrades({ onTradeSelect, selectedAsset, compact }: Sugge
 
     setIsExecuting(true);
     try {
+      const expectedAccountResetCount = account?.resetCount;
+      if (!Number.isSafeInteger(expectedAccountResetCount) || expectedAccountResetCount! < 0) {
+        await fetchAccount();
+        throw new Error('Account state is not ready. Refresh and try again.');
+      }
+
       // Notional-based sizing: $500 default exposure regardless of coin price
       const DEFAULT_NOTIONAL = 500;
       const price = confirmTrade.currentPrice || confirmTrade.entryPrice || 1;
@@ -105,6 +111,7 @@ export function SuggestedTrades({ onTradeSelect, selectedAsset, compact }: Sugge
         side: confirmTrade.direction,
         size,
         leverage: 10,
+        expectedAccountResetCount: expectedAccountResetCount!,
         source: 'signal',
         signalId: confirmTrade.id,
       });
@@ -126,7 +133,7 @@ export function SuggestedTrades({ onTradeSelect, selectedAsset, compact }: Sugge
     } finally {
       setIsExecuting(false);
     }
-  }, [confirmTrade, placeOrder, addToast, fetchAccount]);
+  }, [confirmTrade, account?.resetCount, placeOrder, addToast, fetchAccount]);
 
   if (isLoading) {
     return (

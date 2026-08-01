@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from '@/lib/router';
 import { useEffect } from 'react';
 import { useAuthStore } from './hooks/useAuth';
 import { MainLayout } from './components/layout/MainLayout';
@@ -10,7 +10,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 
 export default function App() {
-  const { initialize, isLoading } = useAuthStore();
+  const { initialize, isAuthenticated, isLoading } = useAuthStore();
 
   useEffect(() => {
     initialize();
@@ -38,8 +38,14 @@ export default function App() {
           </MainLayout>
         }
       />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/trade" replace /> : <LoginPage />}
+      />
+      <Route
+        path="/register"
+        element={isAuthenticated ? <Navigate to="/trade" replace /> : <RegisterPage />}
+      />
       <Route
         path="/trade"
         element={
@@ -66,7 +72,7 @@ export default function App() {
           </AuthGuard>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

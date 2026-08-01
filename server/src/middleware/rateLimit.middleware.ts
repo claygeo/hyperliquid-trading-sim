@@ -12,11 +12,10 @@ const WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 100; // requests per window
 
 function getClientKey(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  const ip = typeof forwarded === 'string' 
-    ? forwarded.split(',')[0] 
-    : req.ip || req.socket.remoteAddress || 'unknown';
-  return ip;
+  // Express resolves req.ip from the configured trusted-proxy boundary. Reading
+  // X-Forwarded-For directly would let clients rotate a spoofed header and
+  // bypass the limiter.
+  return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
 export function rateLimitMiddleware(
@@ -57,7 +56,7 @@ export function rateLimitMiddleware(
 }
 
 // Cleanup old entries periodically
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of store.entries()) {
     if (now > entry.resetTime) {
@@ -65,3 +64,6 @@ setInterval(() => {
     }
   }
 }, WINDOW_MS);
+
+// Housekeeping should not keep short-lived processes or test workers alive.
+cleanupInterval.unref();

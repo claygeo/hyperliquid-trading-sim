@@ -59,3 +59,6 @@ export class ExternalServiceError extends AppError {
     this.service = service;
   }
 }
+
+export const getHttpStatus = (error: unknown): number =>
+  error instanceof AppError ? error.statusCode : 500;

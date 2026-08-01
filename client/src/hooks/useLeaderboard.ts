@@ -4,7 +4,6 @@ import type { LeaderboardEntry } from '../types/user';
 
 interface LeaderboardState {
   entries: LeaderboardEntry[];
-  period: 'daily' | 'alltime';
   total: number;
   page: number;
   pageSize: number;
@@ -12,14 +11,12 @@ interface LeaderboardState {
   error: string | null;
 
   fetchLeaderboard: (page?: number) => Promise<void>;
-  setPeriod: (period: 'daily' | 'alltime') => void;
   nextPage: () => void;
   prevPage: () => void;
 }
 
 export const useLeaderboardStore = create<LeaderboardState>((set, get) => ({
   entries: [],
-  period: 'alltime',
   total: 0,
   page: 1,
   pageSize: 20,
@@ -27,13 +24,13 @@ export const useLeaderboardStore = create<LeaderboardState>((set, get) => ({
   error: null,
 
   fetchLeaderboard: async (page) => {
-    const { period, pageSize } = get();
+    const { pageSize } = get();
     const currentPage = page ?? get().page;
     const offset = (currentPage - 1) * pageSize;
 
     set({ isLoading: true, error: null });
     try {
-      const { entries, total } = await api.getLeaderboard(period, pageSize, offset);
+      const { entries, total } = await api.getLeaderboard(pageSize, offset);
       set({ entries, total, page: currentPage, isLoading: false });
     } catch (error) {
       set({
@@ -41,11 +38,6 @@ export const useLeaderboardStore = create<LeaderboardState>((set, get) => ({
         isLoading: false,
       });
     }
-  },
-
-  setPeriod: (period) => {
-    set({ period, page: 1 });
-    get().fetchLeaderboard(1);
   },
 
   nextPage: () => {

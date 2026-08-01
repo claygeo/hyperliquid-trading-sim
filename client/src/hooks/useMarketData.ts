@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
 import { wsClient } from '../lib/websocket';
-import type { Candle, Orderbook, OrderbookLevel, Trade, MarketData } from '../types/market';
+import type { Candle, Orderbook, OrderbookLevel, Trade } from '../types/market';
 import type { WSMessage } from '../types/websocket';
 import { UI_CONSTANTS } from '../config/constants';
 
@@ -20,7 +20,6 @@ interface MarketDataState {
   candles: Map<string, Candle[]>;
   orderbook: Orderbook | null;
   trades: Trade[];
-  marketData: Map<string, MarketData>;
   currentPrice: number;
 
   // Loading states
@@ -34,7 +33,6 @@ interface MarketDataState {
   setSelectedAsset: (asset: string) => void;
   setSelectedTimeframe: (timeframe: string) => void;
   fetchCandles: (asset: string, timeframe: string) => Promise<void>;
-  updateCandle: (asset: string, candle: Candle) => void;
   updateOrderbook: (asset: string, data: { bids: [number, number][]; asks: [number, number][]; timestamp: number }) => void;
   addTrade: (asset: string, trade: Trade) => void;
   updatePrice: (price: number) => void;
@@ -48,7 +46,6 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   candles: new Map(),
   orderbook: null,
   trades: [],
-  marketData: new Map(),
   currentPrice: 0,
   isLoadingCandles: false,
   isLoadingOrderbook: false,
@@ -156,28 +153,6 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     }
   },
 
-  updateCandle: (asset, candle) => {
-    const { selectedAsset, selectedTimeframe, candles } = get();
-    // Only update if this is the selected asset
-    if (asset !== selectedAsset) return;
-    
-    const key = `${asset}-${selectedTimeframe}`;
-    const currentCandles = candles.get(key) || [];
-    
-    const lastCandle = currentCandles[currentCandles.length - 1];
-    if (lastCandle && lastCandle.time === candle.time) {
-      const updatedCandles = [...currentCandles.slice(0, -1), candle];
-      const newMap = new Map(candles);
-      newMap.set(key, updatedCandles);
-      set({ candles: newMap, currentPrice: candle.close });
-    } else {
-      const updatedCandles = [...currentCandles, candle].slice(-UI_CONSTANTS.CHART_CANDLE_LIMIT);
-      const newMap = new Map(candles);
-      newMap.set(key, updatedCandles);
-      set({ candles: newMap, currentPrice: candle.close });
-    }
-  },
-
   updateOrderbook: (asset, data) => {
     // Only update if this is the selected asset
     if (asset !== get().selectedAsset) return;
@@ -232,25 +207,27 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   },
 
   subscribeToAsset: (asset) => {
-    // Skip if already subscribed to this asset
-    if (get().currentSubscribedAsset === asset) {
-      return;
-    }
+    const channels = [`price:${asset}`, `orderbook:${asset}`, `trades:${asset}`];
+    const currentAsset = get().currentSubscribedAsset;
+
+    // A provider unmount clears the socket client's subscriptions while this
+    // store can survive. Only skip when the socket still owns every channel.
+    if (currentAsset === asset && channels.every((channel) => wsClient.hasSubscription(channel))) return;
+
+    if (currentAsset && currentAsset !== asset) get().unsubscribeFromAsset(currentAsset);
+
+    // Rebuilding a lost same-asset subscription must not duplicate handlers.
+    activeHandlerCleanups.forEach((cleanup) => cleanup());
+    activeHandlerCleanups = [];
     
     // Mark as subscribed
     set({ currentSubscribedAsset: asset });
     
-    wsClient.subscribe(`candles:${asset}`);
+    wsClient.subscribe(`price:${asset}`);
     wsClient.subscribe(`orderbook:${asset}`);
     wsClient.subscribe(`trades:${asset}`);
 
     // Create handlers that check the asset
-    const handleCandle = (msg: WSMessage) => {
-      if (msg.channel === `candles:${asset}` && msg.data) {
-        get().updateCandle(asset, msg.data as Candle);
-      }
-    };
-
     const handleOrderbook = (msg: WSMessage) => {
       if (msg.channel === `orderbook:${asset}` && msg.data) {
         get().updateOrderbook(asset, msg.data as { bids: [number, number][]; asks: [number, number][]; timestamp: number });
@@ -263,12 +240,18 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
       }
     };
 
+    const handlePrice = (msg: WSMessage) => {
+      if (msg.channel !== `price:${asset}` || !msg.data) return;
+      const price = (msg.data as { price?: unknown }).price;
+      if (typeof price === 'number' && Number.isFinite(price)) get().updatePrice(price);
+    };
+
     // Register handlers and store cleanup functions to prevent memory leaks
-    const cleanupCandle = wsClient.on('candle', handleCandle);
+    const cleanupPrice = wsClient.on('price', handlePrice);
     const cleanupOrderbook = wsClient.on('orderbook', handleOrderbook);
     const cleanupTrade = wsClient.on('trade', handleTrade);
 
-    activeHandlerCleanups.push(cleanupCandle, cleanupOrderbook, cleanupTrade);
+    activeHandlerCleanups.push(cleanupPrice, cleanupOrderbook, cleanupTrade);
   },
 
   unsubscribeFromAsset: (asset) => {
@@ -276,7 +259,7 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     activeHandlerCleanups.forEach((cleanup) => cleanup());
     activeHandlerCleanups = [];
 
-    wsClient.unsubscribe(`candles:${asset}`);
+    wsClient.unsubscribe(`price:${asset}`);
     wsClient.unsubscribe(`orderbook:${asset}`);
     wsClient.unsubscribe(`trades:${asset}`);
     set({ currentSubscribedAsset: null });

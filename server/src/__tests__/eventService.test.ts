@@ -104,11 +104,12 @@ describe('EventService', () => {
       expect(mockFrom).toHaveBeenCalledWith('events');
     });
 
-    it('returns empty array on database error', async () => {
+    it('surfaces database errors instead of returning a false empty history', async () => {
       mockQueryResult = { data: null, error: { message: 'Query failed' } };
 
-      const events = await service.getEvents('user-1');
-      expect(events).toEqual([]);
+      await expect(service.getEvents('user-1')).rejects.toThrow(
+        'Failed to fetch activity events: Query failed'
+      );
     });
   });
 });

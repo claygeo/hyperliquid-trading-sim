@@ -1,51 +1,77 @@
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
-import { Server } from 'http';
-import { v4 as uuidv4 } from 'uuid';
+import { Server, type IncomingMessage } from 'http';
+import { randomUUID } from 'node:crypto';
 import { logger } from '../lib/logger.js';
 import { WS_CONSTANTS } from '../config/constants.js';
-import { getSupabase } from '../lib/supabase.js';
+import { config } from '../config/index.js';
+import { getAssetConfig } from '../config/assets.js';
 import type { WSMessage, ClientConnection } from '../types/websocket.js';
+
+const ASSET_CHANNEL = /^(orderbook|trades|price):([A-Za-z0-9]{1,20}|\*)$/;
 
 interface RateLimitState {
   messageCount: number;
   windowStart: number;
 }
 
+type AssetLeaseHandler = (asset: string) => void;
+
+interface AssetLeaseHandlers {
+  acquire: AssetLeaseHandler;
+  release: AssetLeaseHandler;
+}
+
 export class WebSocketServer {
   private wss: WSServer;
   private clients: Map<string, { ws: WebSocket; connection: ClientConnection; rateLimit: RateLimitState }> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private assetLeaseHandlers: AssetLeaseHandlers | null = null;
 
   constructor(server: Server) {
-    this.wss = new WSServer({ server, path: '/ws' });
+    this.wss = new WSServer({
+      server,
+      path: '/ws',
+      maxPayload: WS_CONSTANTS.MAX_PAYLOAD_BYTES,
+    });
     this.setupServer();
     this.startHeartbeat();
   }
 
   private setupServer(): void {
-    this.wss.on('connection', async (ws, req) => {
-      const clientId = uuidv4();
+    this.wss.on('connection', (ws, req) => {
+      const clientId = randomUUID();
+      const ipAddress = this.getClientIp(req);
       const connection: ClientConnection = {
         id: clientId,
+        ipAddress,
         subscriptions: new Set(),
         isAlive: true,
         lastPing: Date.now(),
       };
 
-      // Validate token from query string if present
-      const url = new URL(req.url || '', `http://${req.headers.host}`);
-      const token = url.searchParams.get('token');
-      if (token) {
-        try {
-          const supabase = getSupabase();
-          const { data: { user }, error } = await supabase.auth.getUser(token);
-          if (!error && user) {
-            connection.userId = user.id;
-            logger.debug(`WebSocket authenticated for user ${user.id}`);
-          }
-        } catch (error) {
-          logger.debug('WebSocket token validation failed, continuing as anonymous');
-        }
+      ws.on('close', () => {
+        this.cleanupClient(clientId);
+        logger.info(`Client disconnected: ${clientId}`);
+      });
+
+      ws.on('error', (error) => {
+        logger.error(`WebSocket error for ${clientId}:`, error);
+        this.cleanupClient(clientId);
+      });
+
+      if (this.clients.size >= WS_CONSTANTS.MAX_CLIENTS) {
+        logger.warn(`Rejecting WebSocket client: global connection cap reached`);
+        ws.close(1013, 'Server capacity reached');
+        return;
+      }
+
+      const clientsForIp = [...this.clients.values()].filter(
+        (client) => client.connection.ipAddress === ipAddress
+      ).length;
+      if (clientsForIp >= WS_CONSTANTS.MAX_CLIENTS_PER_IP) {
+        logger.warn(`Rejecting WebSocket client: per-IP cap reached for ${ipAddress}`);
+        ws.close(1008, 'Connection limit reached');
+        return;
       }
 
       const rateLimit: RateLimitState = { messageCount: 0, windowStart: Date.now() };
@@ -76,7 +102,11 @@ export class WebSocketServer {
         }
 
         try {
-          const message: WSMessage = JSON.parse(data.toString());
+          const message: unknown = JSON.parse(data.toString());
+          if (!this.isClientMessage(message)) {
+            this.send(ws, { type: 'error', data: { code: 'INVALID_MESSAGE', message: 'Expected subscribe or unsubscribe with a channel' } });
+            return;
+          }
           this.handleMessage(clientId, message);
         } catch (error) {
           this.send(ws, { type: 'error', data: { code: 'INVALID_MESSAGE', message: 'Malformed JSON' } });
@@ -91,15 +121,6 @@ export class WebSocketServer {
         }
       });
 
-      ws.on('close', () => {
-        this.clients.delete(clientId);
-        logger.info(`Client disconnected: ${clientId}`);
-      });
-
-      ws.on('error', (error) => {
-        logger.error(`WebSocket error for ${clientId}:`, error);
-        this.clients.delete(clientId);
-      });
     });
 
     logger.info('WebSocket server initialized');
@@ -110,24 +131,101 @@ export class WebSocketServer {
     if (!client) return;
 
     switch (message.type) {
-      case 'subscribe':
-        if (message.channel) {
-          client.connection.subscriptions.add(message.channel);
-          logger.debug(`Client ${clientId} subscribed to ${message.channel}`);
+      case 'subscribe': {
+        if (!this.isAllowedChannel(message.channel!)) {
+          this.send(client.ws, { type: 'error', data: { code: 'INVALID_CHANNEL', message: 'Unsupported subscription channel' } });
+          return;
         }
+        if (
+          !client.connection.subscriptions.has(message.channel!)
+          && client.connection.subscriptions.size >= WS_CONSTANTS.MAX_SUBSCRIPTIONS_PER_CLIENT
+        ) {
+          this.send(client.ws, { type: 'error', data: { code: 'SUBSCRIPTION_LIMIT', message: 'Subscription limit reached' } });
+          return;
+        }
+        const isNewSubscription = !client.connection.subscriptions.has(message.channel!);
+        client.connection.subscriptions.add(message.channel!);
+        if (isNewSubscription) {
+          const asset = this.getLeasedAsset(message.channel!);
+          if (asset) this.assetLeaseHandlers?.acquire(asset);
+        }
+        logger.debug(`Client ${clientId} subscribed to ${message.channel}`);
         break;
+      }
 
       case 'unsubscribe':
-        if (message.channel) {
-          client.connection.subscriptions.delete(message.channel);
-          logger.debug(`Client ${clientId} unsubscribed from ${message.channel}`);
+        if (!this.isAllowedChannel(message.channel!)) {
+          this.send(client.ws, { type: 'error', data: { code: 'INVALID_CHANNEL', message: 'Unsupported subscription channel' } });
+          return;
         }
-        break;
-
-      default:
-        // Handle other message types
+        if (client.connection.subscriptions.delete(message.channel!)) {
+          const asset = this.getLeasedAsset(message.channel!);
+          if (asset) this.assetLeaseHandlers?.release(asset);
+        }
+        logger.debug(`Client ${clientId} unsubscribed from ${message.channel}`);
         break;
     }
+  }
+
+  private isClientMessage(message: unknown): message is WSMessage {
+    if (!message || typeof message !== 'object') return false;
+    const candidate = message as { type?: unknown; channel?: unknown };
+    return (
+      (candidate.type === 'subscribe' || candidate.type === 'unsubscribe')
+      && typeof candidate.channel === 'string'
+    );
+  }
+
+  private isAllowedChannel(channel: string): boolean {
+    if (channel.length > WS_CONSTANTS.MAX_CHANNEL_LENGTH) return false;
+    if (channel === 'tps' || channel === 'ping') return true;
+
+    const match = ASSET_CHANNEL.exec(channel);
+    if (!match) return false;
+    const asset = match[2];
+    if (asset === '*') return match[1] === 'price';
+
+    // The upstream feed preserves symbols such as kPEPE. Accept only the
+    // canonical spelling so a valid-looking lowercase subscription cannot sit
+    // idle while broadcasts use a differently cased channel.
+    return getAssetConfig(asset)?.symbol === asset;
+  }
+
+  private getLeasedAsset(channel: string): string | null {
+    const match = ASSET_CHANNEL.exec(channel);
+    if (!match || match[2] === '*' || match[1] === 'price') return null;
+    return match[2];
+  }
+
+  setAssetLeaseHandlers(acquire: AssetLeaseHandler, release: AssetLeaseHandler): void {
+    this.assetLeaseHandlers = { acquire, release };
+  }
+
+  private cleanupClient(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (!client) return;
+
+    for (const channel of client.connection.subscriptions) {
+      const asset = this.getLeasedAsset(channel);
+      if (asset) this.assetLeaseHandlers?.release(asset);
+    }
+    client.connection.subscriptions.clear();
+    this.clients.delete(clientId);
+  }
+
+  private getClientIp(req: IncomingMessage): string {
+    const remoteAddress = req.socket.remoteAddress || 'unknown';
+    if (config.trustProxyHops === 0) return remoteAddress;
+
+    const forwardedHeader = req.headers['x-forwarded-for'];
+    const forwarded = (Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader)
+      ?.split(',')
+      .map((address) => address.trim())
+      .filter(Boolean) ?? [];
+    if (forwarded.length === 0) return remoteAddress;
+
+    const index = Math.max(0, forwarded.length - config.trustProxyHops);
+    return forwarded[index] || remoteAddress;
   }
 
   private startHeartbeat(): void {
@@ -135,8 +233,8 @@ export class WebSocketServer {
       for (const [clientId, { ws, connection }] of this.clients.entries()) {
         if (!connection.isAlive) {
           logger.info(`Terminating inactive client: ${clientId}`);
+          this.cleanupClient(clientId);
           ws.terminate();
-          this.clients.delete(clientId);
           continue;
         }
 
@@ -166,31 +264,33 @@ export class WebSocketServer {
         }
       }
 
-      ws.send(data);
-    }
-  }
-
-  broadcastToUser(userId: string, message: WSMessage): void {
-    const data = JSON.stringify({
-      ...message,
-      timestamp: message.timestamp || Date.now(),
-    });
-
-    for (const [, { ws, connection }] of this.clients.entries()) {
-      if (ws.readyState !== WebSocket.OPEN) continue;
-      if (connection.userId !== userId) continue;
-
-      ws.send(data);
+      this.sendSerialized(ws, data);
     }
   }
 
   private send(ws: WebSocket, message: WSMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
+      this.sendSerialized(ws, JSON.stringify({
         ...message,
         timestamp: message.timestamp || Date.now(),
       }));
     }
+  }
+
+  private sendSerialized(ws: WebSocket, data: string): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount > WS_CONSTANTS.MAX_BUFFERED_AMOUNT_BYTES) {
+      logger.warn(`Terminating slow WebSocket client with ${ws.bufferedAmount} buffered bytes`);
+      for (const [clientId, client] of this.clients) {
+        if (client.ws === ws) {
+          this.cleanupClient(clientId);
+          break;
+        }
+      }
+      ws.terminate();
+      return;
+    }
+    ws.send(data);
   }
 
   getClientCount(): number {
@@ -202,7 +302,8 @@ export class WebSocketServer {
       clearInterval(this.heartbeatInterval);
     }
 
-    for (const [, { ws }] of this.clients.entries()) {
+    for (const [clientId, { ws }] of [...this.clients.entries()]) {
+      this.cleanupClient(clientId);
       ws.close();
     }
 

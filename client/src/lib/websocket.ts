@@ -3,6 +3,7 @@ import { UI_CONSTANTS } from '../config/constants';
 import type { WSMessage, WSMessageType } from '../types/websocket';
 
 type MessageHandler = (message: WSMessage) => void;
+type ConnectionStateHandler = (connected: boolean) => void;
 
 export class WebSocketClient {
   private ws: WebSocket | null = null;
@@ -10,64 +11,74 @@ export class WebSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
+  private connectionStateHandlers: Set<ConnectionStateHandler> = new Set();
   private subscriptions: Set<string> = new Set();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isConnecting = false;
-  private token: string | null = null;
+  private shouldReconnect = true;
+  private connectPromise: Promise<void> | null = null;
 
   constructor(url?: string) {
     this.url = url || config.wsUrl;
   }
 
-  setToken(token: string | null) {
-    this.token = token;
-  }
-
   connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        resolve();
-        return;
-      }
+    this.shouldReconnect = true;
+    if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
+    if (this.connectPromise) return this.connectPromise;
 
-      if (this.isConnecting) {
-        const checkConnection = setInterval(() => {
-          if (this.ws?.readyState === WebSocket.OPEN) {
-            clearInterval(checkConnection);
-            resolve();
-          }
-        }, 100);
-        return;
-      }
+    this.isConnecting = true;
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
+    let settled = false;
+    const attemptPromise = new Promise<void>((resolve, reject) => {
+      const settle = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        if (this.connectPromise === attemptPromise) this.connectPromise = null;
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
 
-      this.isConnecting = true;
-      const wsUrl = this.token ? `${this.url}?token=${this.token}` : this.url;
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
+      socket.onopen = () => {
+        if (this.ws !== socket) {
+          socket.close(1000, 'Superseded connection');
+          settle(new Error('WebSocket connection was superseded'));
+          return;
+        }
         console.log('[WS] Connected');
         this.isConnecting = false;
         this.reconnectAttempts = 0;
-        this.startHeartbeat();
+        this.notifyConnectionState(true);
         this.resubscribe();
-        resolve();
+        settle();
       };
 
-      this.ws.onclose = (event) => {
+      socket.onclose = (event) => {
         console.log('[WS] Disconnected:', event.code, event.reason);
-        this.isConnecting = false;
-        this.stopHeartbeat();
-        this.scheduleReconnect();
+        const isCurrentSocket = this.ws === socket;
+        if (isCurrentSocket) {
+          this.ws = null;
+          this.isConnecting = false;
+          this.notifyConnectionState(false);
+        }
+        settle(new Error(`WebSocket closed before connecting (${event.code})`));
+        if (isCurrentSocket && this.shouldReconnect) this.scheduleReconnect();
       };
 
-      this.ws.onerror = (error) => {
-        console.error('[WS] Error:', error);
-        this.isConnecting = false;
-        reject(error);
+      socket.onerror = (error) => {
+        console.error('[WS] Error: WebSocket connection failed');
+        if (this.ws === socket) {
+          this.isConnecting = false;
+          this.notifyConnectionState(false);
+        }
+        settle(error);
       };
 
-      this.ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         try {
           const message: WSMessage = JSON.parse(event.data);
           this.handleMessage(message);
@@ -76,18 +87,23 @@ export class WebSocketClient {
         }
       };
     });
+
+    this.connectPromise = attemptPromise;
+    return attemptPromise;
   }
 
   disconnect() {
-    this.stopHeartbeat();
+    this.shouldReconnect = false;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      const socket = this.ws;
+      socket.close(1000, 'Client disconnect');
     }
+    this.isConnecting = false;
+    this.notifyConnectionState(false);
     this.subscriptions.clear();
   }
 
@@ -118,6 +134,15 @@ export class WebSocketClient {
 
   off(type: WSMessageType | string, handler: MessageHandler) {
     this.handlers.get(type)?.delete(handler);
+  }
+
+  hasSubscription(channel: string): boolean {
+    return this.subscriptions.has(channel);
+  }
+
+  onConnectionState(handler: ConnectionStateHandler) {
+    this.connectionStateHandlers.add(handler);
+    return () => this.connectionStateHandlers.delete(handler);
   }
 
   send(message: WSMessage) {
@@ -154,19 +179,8 @@ export class WebSocketClient {
     }
   }
 
-  private startHeartbeat() {
-    this.heartbeatInterval = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({ type: 'subscribe', channel: 'ping' });
-      }
-    }, UI_CONSTANTS.WS_HEARTBEAT_INTERVAL);
-  }
-
-  private stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
+  private notifyConnectionState(connected: boolean) {
+    this.connectionStateHandlers.forEach((handler) => handler(connected));
   }
 
   private resubscribe() {
@@ -176,6 +190,8 @@ export class WebSocketClient {
   }
 
   private scheduleReconnect() {
+    if (!this.shouldReconnect || this.reconnectTimeout) return;
+    if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WS] Max reconnect attempts reached');
       return;
@@ -187,6 +203,8 @@ export class WebSocketClient {
     );
 
     this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      if (!this.shouldReconnect) return;
       this.reconnectAttempts++;
       console.log(`[WS] Reconnecting (attempt ${this.reconnectAttempts})...`);
       this.connect().catch(() => {});

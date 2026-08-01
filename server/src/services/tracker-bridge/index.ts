@@ -28,7 +28,6 @@ const signalRowSchema = z.object({
   take_profit_1: z.number().nullable().optional(),
   take_profit_2: z.number().nullable().optional(),
   take_profit_3: z.number().nullable().optional(),
-  trader_count: z.number().nullable().optional(),
   created_at: z.string(),
 });
 
@@ -128,7 +127,7 @@ export class TrackerBridge {
             confidence: s.confidence,
             entryPrice: s.entryPrice,
             source: s.source,
-          }).catch(() => {}); // Non-blocking for bridge reads
+          }).catch(e => logger.warn('[TrackerBridge] signal event emit failed:', e));
         }
       }
       this.lastSeenSignalIds = currentSignalIds;
@@ -153,7 +152,7 @@ export class TrackerBridge {
 
     const { data, error } = await this.client
       .from('quality_signals')
-      .select('id, coin, direction, signal_tier, confidence, avg_entry_price, current_price, stop_loss, take_profit_1, take_profit_2, take_profit_3, trader_count, created_at')
+      .select('id, coin, direction, signal_tier, confidence, avg_entry_price, current_price, stop_loss, take_profit_1, take_profit_2, take_profit_3, created_at')
       .eq('is_active', true)
       .order('confidence', { ascending: false });
 
@@ -185,7 +184,7 @@ export class TrackerBridge {
         takeProfit1: s.take_profit_1 ?? null,
         takeProfit2: s.take_profit_2 ?? null,
         takeProfit3: s.take_profit_3 ?? null,
-        traderCount: s.trader_count || 1,
+        traderCount: 1,
         signalTier: s.signal_tier ?? null,
         kellyFraction: null,
         positionSizeUsd: null,

@@ -24,13 +24,6 @@ jest.mock('../config/index', () => ({
 
 // Mock supabase client
 const mockFrom = jest.fn();
-const mockSelect = jest.fn();
-const mockEq = jest.fn();
-const mockOrder = jest.fn();
-const mockIn = jest.fn();
-const mockLimit = jest.fn();
-const mockNot = jest.fn();
-const mockHead = jest.fn();
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => ({
@@ -84,7 +77,15 @@ describe('TrackerBridge', () => {
   describe('when enabled', () => {
     beforeEach(() => {
       // Override config for enabled bridge
-      const configModule = require('../config/index');
+      const configModule = jest.requireMock('../config/index') as {
+        config: {
+          tracker: {
+            enabled: boolean;
+            supabaseUrl: string;
+            supabaseKey: string;
+          };
+        };
+      };
       configModule.config.tracker.enabled = true;
       configModule.config.tracker.supabaseUrl = 'https://test.supabase.co';
       configModule.config.tracker.supabaseKey = 'test-key';

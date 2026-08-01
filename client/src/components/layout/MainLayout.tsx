@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from '@/lib/router';
 import { Header } from './Header';
 import { WebSocketProvider } from '../../context/WebSocketContext';
 import { MobileNav } from '../ui/MobileNav';

@@ -1,11 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from '@/lib/router';
 import { PriceChart } from '../components/chart/PriceChart';
 import { Orderbook } from '../components/orderbook/Orderbook';
 import { RecentTrades } from '../components/trades/RecentTrades';
 import { OrderForm } from '../components/trading/OrderForm';
 import { AccountStats } from '../components/trading/AccountStats';
-import { OpenOrders } from '../components/trading/OpenOrders';
 import { SuggestedTrades } from '../components/trading/SuggestedTrades';
 import { MobileNav } from '../components/ui/MobileNav';
 import { useMarketDataStore } from '../hooks/useMarketData';
@@ -17,17 +16,16 @@ import { useAssetsStore } from '../hooks/useAssets';
 import { useToast } from '../context/ToastContext';
 import { cn, formatPrice, formatSize, formatUSD, formatPercent } from '../lib/utils';
 import { AnimatedNumber } from '../components/ui/AnimatedNumber';
-import type { Position } from '../types/trading';
+import type { PlaceOrderRequest, Position } from '../types/trading';
 
 type MobileView = 'markets' | 'trade';
 type MarketsTab = 'chart' | 'orderbook';
 
 export function TradingPage() {
-  const location = useLocation();
-  const initialTab = (location.state as { activeTab?: MobileView })?.activeTab || 'markets';
+  const location = useLocation<{ activeTab?: MobileView }>();
+  const initialTab = location.state?.activeTab || 'markets';
   const [mobileView, setMobileView] = useState<MobileView>(initialTab);
   const [marketsTab, setMarketsTab] = useState<MarketsTab>('chart');
-  const [limitPriceFromOrderbook, setLimitPriceFromOrderbook] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(null);
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
   const { addToast } = useToast();
@@ -49,7 +47,7 @@ export function TradingPage() {
     fetchCandles,
   } = useMarketDataStore();
 
-  const { positions, isPlacingOrder, placeOrder, closePosition, fetchPositions, subscribeToPositions } = usePositionsStore();
+  const { positions, isPlacingOrder, placeOrder, closePosition, fetchPositions } = usePositionsStore();
   const { account, stats, fetchAccount, fetchStats, resetAccount } = useAccountStore();
   const { isConnected } = useWebSocket();
 
@@ -67,8 +65,9 @@ export function TradingPage() {
     
     const priceDiff = currentPrice - position.entryPrice;
     const direction = position.side === 'long' ? 1 : -1;
-    const unrealizedPnl = priceDiff * position.size * direction;
-    const unrealizedPnlPercent = (priceDiff / position.entryPrice) * 100 * direction * position.leverage;
+    const rawUnrealizedPnl = priceDiff * position.size * direction;
+    const unrealizedPnl = Math.max(rawUnrealizedPnl, -position.margin);
+    const unrealizedPnlPercent = (unrealizedPnl / position.margin) * 100;
     
     return {
       ...position,
@@ -81,12 +80,9 @@ export function TradingPage() {
   useEffect(() => {
     if (isConnected) {
       subscribeToAsset(selectedAsset);
-      if (isAuthenticated) {
-        subscribeToPositions();
-      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, selectedAsset, isAuthenticated]);
+  }, [isConnected, selectedAsset]);
 
   useEffect(() => {
     fetchCandles(selectedAsset, selectedTimeframe);
@@ -98,11 +94,18 @@ export function TradingPage() {
       fetchPositions();
       fetchAccount();
       fetchStats();
+      const refreshTimer = window.setInterval(() => {
+        fetchPositions();
+        fetchAccount();
+      }, 5000);
+      return () => window.clearInterval(refreshTimer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  const handlePlaceOrder = async (order: Parameters<typeof placeOrder>[0]) => {
+  const handlePlaceOrder = async (
+    order: Omit<PlaceOrderRequest, 'expectedAccountResetCount'>
+  ) => {
     if (!isAuthenticated) {
       addToast({
         type: 'error',
@@ -111,10 +114,14 @@ export function TradingPage() {
       });
       return;
     }
-    await placeOrder(order);
+    const expectedAccountResetCount = account?.resetCount;
+    if (!Number.isSafeInteger(expectedAccountResetCount) || expectedAccountResetCount! < 0) {
+      await fetchAccount();
+      throw new Error('Account state is not ready. Refresh and try again.');
+    }
+    await placeOrder({ ...order, expectedAccountResetCount: expectedAccountResetCount! });
     fetchAccount();
     fetchPositions();
-    setLimitPriceFromOrderbook(null);
   };
 
   const handleClosePosition = async (positionId: string, closeType: 'market' | 'limit' = 'market') => {
@@ -169,12 +176,8 @@ export function TradingPage() {
     setSearchQuery('');
   }, [setSelectedAsset, setSearchQuery]);
 
-  const handleOrderbookPriceClick = useCallback((price: number) => {
-    setLimitPriceFromOrderbook(price);
-  }, []);
-
   const filteredAssets = useMemo(() => getFilteredAssets(), [getFilteredAssets]);
-  const openPositions = positions.filter(p => p.status === 'open');
+  const openPositions = isAuthenticated ? positions.filter(p => p.status === 'open') : [];
 
   // Trophy Icon - Gray to match unselected nav items
   const TrophyIcon = () => (
@@ -190,10 +193,8 @@ export function TradingPage() {
     const isProfitable = position.unrealizedPnl >= 0;
     const isLong = position.side === 'long';
 
-    const margin = (position.size * position.entryPrice) / position.leverage;
-    const liqPrice = isLong 
-      ? position.entryPrice * (1 - 0.9 / position.leverage)
-      : position.entryPrice * (1 + 0.9 / position.leverage);
+    const margin = position.margin;
+    const liqPrice = position.liquidationPrice;
 
     return (
       <div className={cn(
@@ -291,15 +292,7 @@ export function TradingPage() {
                 <div className="text-white font-mono">{formatUSD(position.size * position.entryPrice)}</div>
               </div>
             </div>
-            {/* Text link close buttons like Hyperliquid */}
-            <div className="flex items-center justify-center gap-3 pt-1">
-              <span
-                className="text-[11px] text-gray-600 cursor-not-allowed select-none"
-                title="Limit close orders are not supported"
-              >
-                Limit Close
-              </span>
-              <span className="text-gray-600">|</span>
+            <div className="flex items-center justify-center pt-1">
               <button
                 onClick={() => handleClosePosition(position.id, 'market')}
                 disabled={isClosing}
@@ -535,7 +528,6 @@ export function TradingPage() {
                     <Orderbook 
                       orderbook={orderbook} 
                       asset={selectedAsset} 
-                      onPriceClick={handleOrderbookPriceClick}
                     />
                   </div>
                 )}
@@ -552,7 +544,6 @@ export function TradingPage() {
                   orderbook={orderbook} 
                   asset={selectedAsset} 
                   compact 
-                  onPriceClick={handleOrderbookPriceClick}
                 />
               </div>
               
@@ -561,11 +552,10 @@ export function TradingPage() {
                 <OrderForm
                   selectedAsset={selectedAsset}
                   currentPrice={currentPrice}
-                  availableBalance={account?.availableMargin || 100000}
+                  availableBalance={isAuthenticated ? (account?.availableMargin ?? 0) : 100000}
                   onPlaceOrder={handlePlaceOrder}
                   isPlacingOrder={isPlacingOrder}
                   compact
-                  externalLimitPrice={limitPriceFromOrderbook}
                 />
               </div>
             </div>
@@ -582,7 +572,6 @@ export function TradingPage() {
             <Orderbook 
               orderbook={orderbook} 
               asset={selectedAsset}
-              onPriceClick={handleOrderbookPriceClick}
             />
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
@@ -622,12 +611,11 @@ export function TradingPage() {
           )}
         </div>
 
-        <div className="w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+        <div className="w-72 lg:w-80 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
           {isAuthenticated && (
             <AccountStats
               account={account}
               stats={stats}
-              positions={positionsWithLivePnl}
               onReset={async () => {
                 await resetAccount();
                 fetchPositions();
@@ -650,13 +638,10 @@ export function TradingPage() {
           <OrderForm
             selectedAsset={selectedAsset}
             currentPrice={currentPrice}
-            availableBalance={account?.availableMargin || 100000}
+            availableBalance={isAuthenticated ? (account?.availableMargin ?? 0) : 100000}
             onPlaceOrder={handlePlaceOrder}
             isPlacingOrder={isPlacingOrder}
-            externalLimitPrice={limitPriceFromOrderbook}
           />
-
-          {isAuthenticated && <OpenOrders />}
         </div>
       </div>
     </div>

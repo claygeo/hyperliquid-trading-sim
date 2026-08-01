@@ -32,17 +32,6 @@ export interface Trade {
   isSimulated?: boolean;
 }
 
-export interface MarketData {
-  asset: string;
-  price: number;
-  change24h: number;
-  changePercent24h: number;
-  high24h: number;
-  low24h: number;
-  volume24h: number;
-  timestamp: number;
-}
-
 export interface PriceUpdate {
   asset: string;
   price: number;

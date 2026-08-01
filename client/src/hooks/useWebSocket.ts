@@ -11,34 +11,24 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const { autoConnect = true, onMessage, onConnect, onError } = options;
+  const { autoConnect = true, onMessage, onConnect, onDisconnect, onError } = options;
   const [isConnected, setIsConnected] = useState(wsClient.isConnected);
   const handlersRef = useRef<Map<string, (message: WSMessage) => void>>(new Map());
 
   useEffect(() => {
     if (!autoConnect) return;
 
-    const connect = async () => {
-      try {
-        await wsClient.connect();
-        setIsConnected(true);
-        onConnect?.();
-      } catch (error) {
-        onError?.(error as Event);
-      }
-    };
-
-    connect();
-
-    const unsubConnected = wsClient.on('connected', () => {
-      setIsConnected(true);
-      onConnect?.();
+    const unsubscribeState = wsClient.onConnectionState((connected) => {
+      setIsConnected(connected);
+      if (connected) onConnect?.();
+      else onDisconnect?.();
     });
+    wsClient.connect().catch((error) => onError?.(error as Event));
 
     return () => {
-      unsubConnected();
+      unsubscribeState();
     };
-  }, [autoConnect, onConnect, onError]);
+  }, [autoConnect, onConnect, onDisconnect, onError]);
 
   useEffect(() => {
     if (!onMessage) return;

@@ -37,11 +37,15 @@ export function ProfilePage() {
     );
   }
 
-  const totalPnl = account ? account.balance - (account.initialBalance || 100000) : 0;
+  const accountEquity = account?.equity ?? 0;
+  const initialBalance = account?.initialBalance ?? 100000;
+  const totalPnl = account ? accountEquity - initialBalance : 0;
   const isProfitable = totalPnl >= 0;
   const winRate = stats?.winRate || 0;
   const isGoodWinRate = winRate >= 50;
-  const profitFactor = stats?.profitFactor || 0;
+  const profitFactor = stats?.profitFactor ?? 0;
+  const profitFactorLabel = profitFactor === 'infinite' ? '∞' : profitFactor.toFixed(2);
+  const isGoodProfitFactor = profitFactor === 'infinite' || profitFactor >= 1;
 
   return (
     <div className="h-[100dvh] bg-[#0d0f11] flex flex-col pb-12 md:pb-0">
@@ -67,26 +71,26 @@ export function ProfilePage() {
         {/* Balance Card */}
         <div className="bg-[#13161a] rounded-xl border border-[#1e2126] p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-gray-400 text-sm">Current Balance</span>
+            <span className="text-gray-400 text-sm">Account Equity</span>
             <span className={cn(
               'text-xs px-2 py-0.5 rounded font-mono',
               isProfitable 
                 ? 'bg-[#3dd9a4]/10 text-[#3dd9a4]/90' 
                 : 'bg-[#f6465d]/10 text-[#f6465d]/80'
             )}>
-              {isProfitable ? '+' : ''}{formatPercent((totalPnl / 100000) * 100)}
+              {isProfitable ? '+' : ''}{formatPercent((totalPnl / initialBalance) * 100)}
             </span>
           </div>
           <p className={cn(
             'text-3xl font-semibold font-mono mb-3',
             isProfitable ? 'text-[#3dd9a4]' : 'text-[#f6465d]/85'
           )}>
-            {formatUSD(account?.balance || 0)}
+            {formatUSD(accountEquity)}
           </p>
           <div className="flex items-center gap-6 text-sm">
             <div>
               <span className="text-gray-500">Start: </span>
-              <span className="text-white font-mono">{formatUSD(account?.initialBalance || 100000)}</span>
+              <span className="text-white font-mono">{formatUSD(initialBalance)}</span>
             </div>
             <div>
               <span className="text-gray-500">P&L: </span>
@@ -110,8 +114,8 @@ export function ProfilePage() {
           />
           <StatBox 
             label="Profit Factor" 
-            value={profitFactor.toFixed(2)} 
-            valueClass={profitFactor >= 1 ? 'text-[#3dd9a4]' : 'text-[#f6465d]/80'}
+            value={profitFactorLabel}
+            valueClass={isGoodProfitFactor ? 'text-[#3dd9a4]' : 'text-[#f6465d]/80'}
           />
           <StatBox label="Wins" value={String(stats?.winningTrades || 0)} valueClass="text-[#3dd9a4]" />
           <StatBox label="Losses" value={String(stats?.losingTrades || 0)} valueClass="text-[#f6465d]/80" />
@@ -171,17 +175,17 @@ export function ProfilePage() {
 
             {/* Balance */}
             <div className="bg-[#13161a] rounded-lg border border-[#1e2126] p-5">
-              <h2 className="text-lg font-medium text-white mb-4">Balance</h2>
+              <h2 className="text-lg font-medium text-white mb-4">Account Value</h2>
               <div className="bg-[#1a1d21] rounded-lg p-4 mb-4">
-                <p className="text-gray-500 text-xs mb-1">Current Balance</p>
+                <p className="text-gray-500 text-xs mb-1">Account Equity</p>
                 <p className={cn('text-3xl font-mono font-semibold', isProfitable ? 'text-[#3dd9a4]' : 'text-[#f6465d]/85')}>
-                  {formatUSD(account?.balance || 0)}
+                  {formatUSD(accountEquity)}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-[#1a1d21] rounded-lg p-3">
                   <p className="text-gray-500 text-xs mb-1">Initial Balance</p>
-                  <p className="text-white font-mono font-medium">{formatUSD(account?.initialBalance || 100000)}</p>
+                  <p className="text-white font-mono font-medium">{formatUSD(initialBalance)}</p>
                 </div>
                 <div className="bg-[#1a1d21] rounded-lg p-3">
                   <p className="text-gray-500 text-xs mb-1">Total P&L</p>
@@ -198,7 +202,7 @@ export function ProfilePage() {
                 <StatBoxDesktop label="Total Trades" value={String(stats?.tradeCount || 0)} />
                 <StatBoxDesktop label="Win Rate" value={formatPercent(winRate)} valueClass={isGoodWinRate ? 'text-[#3dd9a4]' : 'text-[#f6465d]/80'} />
                 <StatBoxDesktop label="Max Drawdown" value={formatPercent(stats?.maxDrawdown || 0)} valueClass="text-[#f6465d]/80" />
-                <StatBoxDesktop label="Profit Factor" value={profitFactor.toFixed(2)} valueClass={profitFactor >= 1 ? 'text-[#3dd9a4]' : 'text-[#f6465d]/80'} />
+                <StatBoxDesktop label="Profit Factor" value={profitFactorLabel} valueClass={isGoodProfitFactor ? 'text-[#3dd9a4]' : 'text-[#f6465d]/80'} />
                 <StatBoxDesktop label="Winning Trades" value={String(stats?.winningTrades || 0)} valueClass="text-[#3dd9a4]" />
                 <StatBoxDesktop label="Losing Trades" value={String(stats?.losingTrades || 0)} valueClass="text-[#f6465d]/80" />
                 <StatBoxDesktop label="Best Trade" value={formatUSD(stats?.bestTrade || 0)} valueClass="text-[#3dd9a4]" />

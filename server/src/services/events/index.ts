@@ -18,8 +18,9 @@ export interface TradingEvent {
 }
 
 export class EventService {
-  // Emit uses await for reliability, not fire-and-forget.
-  // This ensures replay data integrity at the cost of ~1-2ms per event.
+  // Activity events are deliberately best-effort because trading state commits
+  // first. Throwing afterward would tell the caller an order failed even though
+  // its accounting transaction succeeded. This is not a transactional outbox.
   async emit(type: EventType, payload: Record<string, unknown>, userId?: string, sessionId?: string): Promise<void> {
     try {
       const supabase = getSupabase();
@@ -68,8 +69,7 @@ export class EventService {
     const { data, error } = await query;
 
     if (error) {
-      logger.error('[EventService] Failed to fetch events:', error.message);
-      return [];
+      throw new Error(`Failed to fetch activity events: ${error.message}`);
     }
 
     return (data || []).map((row: Record<string, unknown>) => ({

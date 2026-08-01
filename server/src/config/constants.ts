@@ -1,6 +1,7 @@
 export const TRADING_CONSTANTS = {
   INITIAL_BALANCE: 100_000,
   MIN_ORDER_SIZE: 0.001,
+  MAX_ORDER_NOTIONAL: 5_000_000,
   MAX_LEVERAGE: 50,
   DEFAULT_LEVERAGE: 10,
   MAKER_FEE: 0.0002,
@@ -13,11 +14,18 @@ export const TRADING_CONSTANTS = {
 // Real slippage is nonlinear and order-book dependent. This demonstrates
 // the execution architecture, not a production-grade market microstructure model.
 export const SLIPPAGE_BPS_PER_10K = 5; // 0.05% per $10k notional
+export const MAX_SLIPPAGE_BPS = 100; // cap simulated market impact at 1%
 
 export const WS_CONSTANTS = {
   HEARTBEAT_INTERVAL: 30000,
   RECONNECT_DELAY: 3000,
   MAX_RECONNECT_ATTEMPTS: 10,
+  MAX_PAYLOAD_BYTES: 16 * 1024,
+  MAX_BUFFERED_AMOUNT_BYTES: 1024 * 1024,
+  MAX_SUBSCRIPTIONS_PER_CLIENT: 16,
+  MAX_CHANNEL_LENGTH: 48,
+  MAX_CLIENTS: 500,
+  MAX_CLIENTS_PER_IP: 20,
   RATE_LIMIT: {
     MAX_MESSAGES_PER_SECOND: 20,
     WINDOW_MS: 1000,

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '@/lib/router';
 import { Button } from '../ui/Button';
 import { TRADING_CONSTANTS } from '../../config/constants';
 import { formatUSD, calculateMargin, calculateLiquidationPrice } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
 import { useAuthStore } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
-import type { OrderSide, OrderType } from '../../types/trading';
+import type { OrderSide } from '../../types/trading';
 
 interface OrderFormProps {
   selectedAsset: string;
@@ -17,12 +17,9 @@ interface OrderFormProps {
     side: OrderSide; 
     size: number; 
     leverage: number;
-    type?: OrderType;
-    price?: number;
   }) => Promise<void>;
   isPlacingOrder: boolean;
   compact?: boolean;
-  externalLimitPrice?: number | null;
 }
 
 export function OrderForm({
@@ -32,13 +29,10 @@ export function OrderForm({
   onPlaceOrder,
   isPlacingOrder,
   compact = false,
-  externalLimitPrice,
 }: OrderFormProps) {
   const { isAuthenticated } = useAuthStore();
   const [side, setSide] = useState<OrderSide>('long');
-  const [orderType, setOrderType] = useState<OrderType>('market');
   const [size, setSize] = useState('');
-  const [limitPrice, setLimitPrice] = useState('');
   const [leverage, setLeverage] = useState<number>(TRADING_CONSTANTS.DEFAULT_LEVERAGE);
   const [selectedPercent, setSelectedPercent] = useState<number | null>(null);
   const [hasError, setHasError] = useState(false);
@@ -46,27 +40,12 @@ export function OrderForm({
   const inputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
 
-  useEffect(() => {
-    if (externalLimitPrice && externalLimitPrice > 0) {
-      setLimitPrice(externalLimitPrice.toString());
-      setOrderType('limit');
-    }
-  }, [externalLimitPrice]);
-
   const sizeNum = parseFloat(size) || 0;
-  const limitPriceNum = parseFloat(limitPrice) || currentPrice;
-  const effectivePrice = orderType === 'limit' ? limitPriceNum : currentPrice;
+  const effectivePrice = currentPrice;
   const notionalValue = sizeNum * effectivePrice;
   const margin = calculateMargin(sizeNum, effectivePrice, leverage);
   const liquidationPrice = calculateLiquidationPrice(effectivePrice, leverage, side);
   const canAfford = margin <= availableBalance;
-
-  useEffect(() => {
-    if (orderType === 'limit' && !limitPrice && currentPrice > 0) {
-      setLimitPrice(currentPrice.toFixed(2));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPrice, orderType]);
 
   useEffect(() => {
     setSelectedPercent(null);
@@ -78,13 +57,6 @@ export function OrderForm({
     if (sizeNum <= 0) {
       setHasError(true);
       setTimeout(() => setHasError(false), 500);
-      return;
-    }
-
-    if (orderType === 'limit' && limitPriceNum <= 0) {
-      setHasError(true);
-      setTimeout(() => setHasError(false), 500);
-      addToast({ type: 'error', title: 'Invalid Price', message: 'Please enter a valid limit price' });
       return;
     }
 
@@ -105,8 +77,6 @@ export function OrderForm({
         side,
         size: sizeNum,
         leverage,
-        type: orderType,
-        price: orderType === 'limit' ? limitPriceNum : undefined,
       });
       
       setShowSuccess(true);
@@ -120,7 +90,6 @@ export function OrderForm({
       
       setSize('');
       setSelectedPercent(null);
-      if (orderType === 'limit') setLimitPrice('');
     } catch (error) {
       addToast({
         type: 'error',
@@ -167,36 +136,10 @@ export function OrderForm({
           </button>
         </div>
 
-        {/* Order type */}
-        <div className="flex gap-2 mb-4">
-          {(['market', 'limit'] as OrderType[]).map((type) => (
-            <button
-              key={type}
-              onClick={() => setOrderType(type)}
-              className={cn(
-                'flex-1 py-2.5 text-sm font-medium rounded transition-all capitalize',
-                orderType === type ? 'bg-bg-elevated text-white' : 'bg-bg-tertiary text-gray-500'
-              )}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-
         {/* Price */}
         <div className="flex items-center justify-between text-sm mb-4 px-1">
-          <span className="text-gray-500">Price</span>
-          {orderType === 'market' ? (
-            <span className="text-accent-cyan font-mono text-base">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-          ) : (
-            <input
-              type="number"
-              value={limitPrice}
-              onChange={(e) => setLimitPrice(e.target.value)}
-              className="w-32 bg-bg-tertiary border border-border rounded px-3 py-2 text-right text-white font-mono text-sm focus:outline-none focus:border-accent-cyan"
-              placeholder="0.00"
-            />
-          )}
+          <span className="text-gray-500">Market price</span>
+          <span className="text-accent-cyan font-mono text-base">${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
         </div>
 
         {/* Leverage */}
@@ -334,41 +277,17 @@ export function OrderForm({
         </button>
       </div>
 
-      <div className="flex items-center gap-1 mb-3 bg-bg-tertiary rounded-lg p-0.5">
-        {(['market', 'limit'] as OrderType[]).map((type) => (
-          <button
-            key={type}
-            onClick={() => setOrderType(type)}
-            className={cn(
-              'flex-1 py-1.5 text-xs font-medium rounded-md transition-all capitalize',
-              orderType === type ? 'bg-bg-elevated text-white' : 'text-gray-500 hover:text-gray-300'
-            )}
-          >
-            {type}
-          </button>
-        ))}
+      <div className="mb-3 rounded-lg bg-bg-tertiary px-3 py-2 text-xs font-medium text-gray-400">
+        Market order
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        {orderType === 'market' ? (
-          <div className="flex items-center justify-between text-sm py-2 px-3 bg-bg-tertiary rounded-lg">
-            <span className="text-gray-500">Price</span>
-            <span className="text-accent-cyan font-mono font-semibold">
-              ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-        ) : (
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Limit Price</label>
-            <input
-              type="number"
-              value={limitPrice}
-              onChange={(e) => setLimitPrice(e.target.value)}
-              className="w-full bg-bg-tertiary border border-border rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-accent-cyan"
-              placeholder="0.00"
-            />
-          </div>
-        )}
+        <div className="flex items-center justify-between text-sm py-2 px-3 bg-bg-tertiary rounded-lg">
+          <span className="text-gray-500">Market price</span>
+          <span className="text-accent-cyan font-mono font-semibold">
+            ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </span>
+        </div>
 
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-gray-500">
@@ -451,9 +370,7 @@ export function OrderForm({
           isLoading={isPlacingOrder}
           disabled={sizeNum <= 0 || !canAfford || isPlacingOrder}
         >
-          {isPlacingOrder ? 'Placing...' : (
-            orderType === 'limit' ? 'Place Limit Order' : `${side === 'long' ? 'Buy' : 'Sell'} ${selectedAsset}`
-          )}
+          {isPlacingOrder ? 'Placing...' : `${side === 'long' ? 'Buy' : 'Sell'} ${selectedAsset}`}
         </Button>
       </form>
 

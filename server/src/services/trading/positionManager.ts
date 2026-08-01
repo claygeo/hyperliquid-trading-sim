@@ -92,47 +92,6 @@ export class PositionManager {
     return this.mapDbPosition(updated);
   }
 
-  async checkLiquidations(
-    userId: string,
-    prices: Map<string, number>
-  ): Promise<Position[]> {
-    const positions = await this.getOpenPositions(userId);
-    const liquidated: Position[] = [];
-
-    for (const position of positions) {
-      const currentPrice = prices.get(position.asset);
-      if (!currentPrice) continue;
-
-      const shouldLiquidate = this.pnlCalculator.shouldLiquidate(
-        position.entryPrice,
-        currentPrice,
-        position.liquidationPrice,
-        position.side
-      );
-
-      if (shouldLiquidate) {
-        await this.liquidatePosition(position.id);
-        liquidated.push(position);
-      }
-    }
-
-    return liquidated;
-  }
-
-  private async liquidatePosition(positionId: string): Promise<void> {
-    const supabase = getSupabase();
-
-    // Execute liquidation atomically via RPC
-    const { error } = await supabase.rpc('liquidate_position_atomic', {
-      p_position_id: positionId,
-    });
-
-    if (error) {
-      // Non-critical: position may have already been closed
-      return;
-    }
-  }
-
   private mapDbPosition(db: Record<string, unknown>): Position {
     return {
       id: db.id as string,
