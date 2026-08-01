@@ -9,7 +9,7 @@
 
 A full-stack paper-trading simulator built to exercise backend boundaries: authenticated commands, account-first PostgreSQL transactions, live public market feeds, fail-closed price checks, and a browser that never receives database service credentials.
 
-> **Deployment status:** the public demo is intentionally unlisted. The application code and migration chain are verified locally, but the former Supabase environment is unavailable. A new deployment is blocked on database recovery, full migration replay, a legacy-data audit that includes account reset generations, and end-to-end QA against the recovered environment.
+> **Deployment status:** a fresh production database has been provisioned and the full 11-migration hardened chain applied. Service environment cutover and end-to-end QA are in progress; the public demo link returns after live verification.
 
 ## What is verified
 
@@ -249,4 +249,8 @@ supabase/
 
 ## License
 
+<<<<<<< HEAD
 [MIT](LICENSE)
+=======
+MIT
+>>>>>>> origin/main
