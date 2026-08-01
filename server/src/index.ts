@@ -4,6 +4,7 @@ import { app } from './app.js';
 import { WebSocketServer } from './websocket/index.js';
 import { HyperliquidService } from './services/hyperliquid/index.js';
 import { StressTestService } from './services/stress-test/index.js';
+import { createLiquidationEngine } from './services/liquidation/index.js';
 import { setHyperliquidService } from './routes/trading.routes.js';
 import { setStressTestService } from './routes/stressTest.routes.js';
 import { setMarketHyperliquidService } from './routes/market.routes.js';
@@ -44,6 +45,11 @@ async function main() {
     logger.error('Failed to connect to Hyperliquid:', error);
   }
 
+  // Liquidation engine: server-side sweep that routes liquidation-price
+  // crossings through the same atomic close path as manual closes.
+  const liquidationEngine = createLiquidationEngine();
+  liquidationEngine.start(config.liquidation.sweepIntervalMs);
+
   // Start server
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
@@ -56,6 +62,7 @@ async function main() {
     logger.info('Shutting down...');
     
     stressTest.setSpeed('off'); // Stop stress test
+    liquidationEngine.stop();
     wss.close();
     hyperliquid.disconnect();
     

@@ -32,4 +32,8 @@ export const config = {
     apiUrl: process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz',
     wsUrl: process.env.HYPERLIQUID_WS_URL || 'wss://api.hyperliquid.xyz/ws',
   },
+
+  liquidation: {
+    sweepIntervalMs: parseInt(process.env.LIQUIDATION_SWEEP_MS || '3000', 10),
+  },
 } as const;

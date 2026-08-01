@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger.js';
 export type EventType =
   | 'trade_executed'
   | 'position_closed'
+  | 'position_liquidated'
   | 'signal_received'
   | 'price_tick'
   | 'pnl_update';
