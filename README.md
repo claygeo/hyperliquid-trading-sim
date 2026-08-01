@@ -10,6 +10,8 @@
 A full-stack paper-trading simulator built to exercise backend boundaries: authenticated commands, account-first PostgreSQL transactions, live public market feeds, fail-closed price checks, and a browser that never receives database service credentials.
 
 > **Live demo:** [tradeterm.claygeo.dev](https://tradeterm.claygeo.dev) — running the full hardened stack: fresh PostgreSQL with the complete 11-migration chain, server-only mutation authority, and live Hyperliquid market feeds.
+>
+> **Case study:** [docs/CASE-STUDY.md](docs/CASE-STUDY.md) — the audit-to-hardening story in readable form, with end-to-end latencies measured against the live deployment.
 
 ## What is verified
 
@@ -207,6 +209,8 @@ At this revision:
 - Client and server typechecks pass.
 - Client and server ESLint checks pass with zero warnings.
 - Client and server production builds pass on Node 22.13.0.
+
+Measured end-to-end latencies of the live deployment (order p50 571 ms / p95 874 ms including the full atomic accounting transaction; method, caveats, and the full table in [docs/CASE-STUDY.md](docs/CASE-STUDY.md), measured 2026-08-01).
 
 Run the repository gates:
 
