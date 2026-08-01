@@ -9,7 +9,7 @@
 
 A full-stack paper-trading simulator built to exercise backend boundaries: authenticated commands, account-first PostgreSQL transactions, live public market feeds, fail-closed price checks, and a browser that never receives database service credentials.
 
-> **Deployment status:** a fresh production database has been provisioned and the full 11-migration hardened chain applied. Service environment cutover and end-to-end QA are in progress; the public demo link returns after live verification.
+> **Live demo:** [tradeterm.claygeo.dev](https://tradeterm.claygeo.dev) — running the full hardened stack: fresh PostgreSQL with the complete 11-migration chain, server-only mutation authority, and live Hyperliquid market feeds.
 
 ## What is verified
 

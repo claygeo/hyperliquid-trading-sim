@@ -24,7 +24,8 @@ app.use(cors({
   origin: [
     'http://localhost:5173',
     'http://localhost:3000',
-    'https://trading-sim-hl.netlify.app'
+    'https://trading-sim-hl.netlify.app',
+    'https://tradeterm.claygeo.dev'
   ],
   credentials: true,
 }));
