@@ -249,8 +249,4 @@ supabase/
 
 ## License
 
-<<<<<<< HEAD
 [MIT](LICENSE)
-=======
-MIT
->>>>>>> origin/main
